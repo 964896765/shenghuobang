@@ -73,11 +73,16 @@ export interface ResourceFact {
   projectId?: number;
   assigneeAccountId?: number;
   memberAccountIds?: number[];
+  /** Accounts with an unexpired pending invitation. This is only usable by invitation/NDA pre-flow capabilities. */
+  pendingInviteeAccountIds?: number[];
+  memberConfidentialityClearance?: Confidentiality;
   confidentiality: Confidentiality;
   ndaRequired?: boolean;
   public?: boolean;
   version?: number;
   availableFields?: string[];
+  /** Resource-specific NDA result after validating both the acceptance and its still-active invitation relation. */
+  ndaAccepted?: boolean;
   workflowActors?: {
     submittedByAccountId?: number;
     initialReviewerAccountId?: number;

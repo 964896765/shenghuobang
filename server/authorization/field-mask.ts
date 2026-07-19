@@ -12,6 +12,8 @@ const FIELD_GROUPS: Record<string, readonly string[]> = {
   bom_cost: ["bomCost", "bomUnitCost", "bomTotalCost", "materialCost"],
   process: ["processContent", "manufacturingProcess", "processFile"],
   design_source: ["designSource", "designSourceFile", "cadFile", "sourceProjectFile"],
+  idea_internal: ["creatorAccountId", "creatorIdentityId", "convertedProjectId", "authorizationVersion", "inviterAccountId", "invitedAccountId", "invitedIdentityId", "activeDedupeKey", "requestId"],
+  file_reference: ["fileId", "coverFileId", "accessPolicyVersion"],
   audit_sensitive: ["contextData", "detail", "ipAddress", "userAgent", "error", "errorMessage", "payload", "token"],
 };
 

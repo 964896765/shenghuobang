@@ -313,11 +313,12 @@ export class IdeaService {
   }
 
   async listPublic(accountId: number, options: IdeaPublicListOptions = {}, requestId?: string | null) {
-    await requireAllowed(this.authorization, accountId, {
+    const authorization = await requireAllowed(this.authorization, accountId, {
       capabilityCode: "idea.view_public",
       purpose: "idea_list_public",
       requestId,
       view: "list",
+      requestedFields: ["id", "creatorAccountId", "creatorIdentityId", "title", "summary", "categoryCode", "tags", "visibility", "status", "coverFileId", "publishedAt", "convertedProjectId", "createdAt", "updatedAt"],
     });
     const db = await requireDb();
     const conditions = [
@@ -336,7 +337,7 @@ export class IdeaService {
       )!);
     }
     const rows = await db.select().from(ideas).where(and(...conditions)).orderBy(desc(ideas.publishedAt), desc(ideas.id)).limit(limitValue(options.limit));
-    return rows.map(publicSummary);
+    return rows.map((row) => applyFieldMask(publicSummary(row) as Record<string, unknown>, authorization.fieldMask));
   }
 
   async listMine(accountId: number, options: IdeaListOptions = {}, requestId?: string | null) {

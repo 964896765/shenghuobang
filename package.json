@@ -51,7 +51,8 @@
     "test:v33-a3-integration-fixes": "tsx scripts/test-v33-a3-authorization-integration-fixes.ts",
     "test:v33-a4-identity-organization": "tsx scripts/test-v33-a4-identity-organization.ts",
     "test:v33-a5-workspace-mobile": "tsx scripts/test-v33-a5-workspace-mobile.ts",
-    "test:v33-b1-idea-service": "tsx scripts/test-v33-b1-idea-service.ts"
+    "test:v33-b1-idea-service": "tsx scripts/test-v33-b1-idea-service.ts",
+    "test:v33-b1-idea-routes": "tsx scripts/test-v33-b1-idea-routes.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1085.0",

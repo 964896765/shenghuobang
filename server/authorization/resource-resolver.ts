@@ -13,9 +13,12 @@ export function resourceRelationMatches(request: AuthorizationRequest, facts: Au
   if (!request.resourceType && !request.resourceId) return true;
   const resource = facts.resource;
   if (!resource) return false;
+  const invitationPreFlow = ["idea.invitation.accept", "idea.nda.accept"].includes(request.capabilityCode) ||
+    (request.capabilityCode === "idea.view_private" && resource.ndaRequired === true);
   return resource.ownerAccountId === request.accountId ||
     resource.assigneeAccountId === request.accountId ||
     resource.memberAccountIds?.includes(request.accountId) === true ||
+    (invitationPreFlow && resource.pendingInviteeAccountIds?.includes(request.accountId) === true) ||
     (request.organizationId != null && resource.organizationId === request.organizationId && facts.organizationMembership?.status === "active") ||
     (request.projectId != null && resource.projectId === request.projectId && facts.projectMembership?.status === "active") ||
     resource.public === true ||
@@ -30,7 +33,11 @@ export function validateResource(request: AuthorizationRequest, facts: Authoriza
   if (request.expectedResourceVersion != null && resource.version !== request.expectedResourceVersion) return AUTHORIZATION_REASON_CODES.CONCURRENT_MODIFICATION;
   const platformClearance = facts.assignments.some((item) => item.sourceType === "PLATFORM_POSITION" && item.status === "active") ? "RESTRICTED" : null;
   const ownerClearance = resource.ownerAccountId === request.accountId ? "RESTRICTED" : null;
-  const memberClearance = resource.memberAccountIds?.includes(request.accountId) ? "INTERNAL" : null;
+  const memberClearance = resource.memberAccountIds?.includes(request.accountId)
+    ? resource.memberConfidentialityClearance ?? "INTERNAL"
+    : request.capabilityCode === "idea.view_private" && resource.ndaRequired && resource.pendingInviteeAccountIds?.includes(request.accountId)
+      ? "NDA"
+      : null;
   const clearance = platformClearance ?? ownerClearance ?? facts.projectMembership?.confidentialityClearance ?? request.confidentiality ?? memberClearance ?? "PUBLIC";
   if (clearanceRank[clearance] < clearanceRank[resource.confidentiality]) return AUTHORIZATION_REASON_CODES.CONFIDENTIALITY_TOO_HIGH;
   if ((resource.ndaRequired || resource.confidentiality === "NDA") && !facts.ndaAccepted) return AUTHORIZATION_REASON_CODES.NDA_REQUIRED;

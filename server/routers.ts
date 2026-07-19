@@ -17,6 +17,7 @@ import { verificationsRouter, adminVerificationsRouter } from "./routers/verific
 import { complaintsRouter, adminComplaintsRouter } from "./routers/complaint-router";
 import { adminRouter, auditLogsRouter, platformOperationsRouter } from "./routers/admin-router";
 import { accountProfileRouter, certificationRouter, identityRouter, organizationRouter, workspaceRouter } from "./routers/identity-organization-router";
+import { ideasRouter } from "./routers/ideas-router";
 import * as verificationService from "./services/verification-service";
 import { listMyCertifications, listMyIdentities, submitIdentityCertification, updateAccountAndPublicProfile } from "./services/identity-service";
 import { switchWorkspace } from "./services/workspace-service";
@@ -167,6 +168,7 @@ export const appRouter = router({
   certification: certificationRouter,
   organization: organizationRouter,
   workspace: workspaceRouter,
+  ideas: ideasRouter,
   location: router({
     me: protectedProcedure.query(async ({ ctx }) => {
       const preference = await db.getLocationPreference(ctx.user.id);
