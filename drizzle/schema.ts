@@ -211,8 +211,9 @@ export type Quote = typeof quotes.$inferSelect;
 /** 工程项目 */
 export const projects = mysqlTable("projects", {
   id: int("id").autoincrement().primaryKey(),
-  needId: int("needId").notNull(),
-  quoteId: int("quoteId").notNull(),
+  // Legacy quote-created projects keep both references. Idea-created projects leave them NULL.
+  needId: int("needId"),
+  quoteId: int("quoteId"),
   ownerId: int("ownerId").notNull(),
   engineerId: int("engineerId").notNull(),
   title: varchar("title", { length: 255 }).notNull(),
@@ -2261,3 +2262,100 @@ export const auditLogs = mysqlTable("audit_logs",
   }),
 );
 export type AuditLog = typeof auditLogs.$inferSelect;
+
+// ============ V3.3-B1 idea collaboration ============
+
+export const ideas = mysqlTable("ideas",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    creatorAccountId: int("creatorAccountId").notNull().references(() => users.id),
+    creatorIdentityId: int("creatorIdentityId").notNull().references(() => businessIdentities.id),
+    title: varchar("title", { length: 160 }).notNull(),
+    summary: varchar("summary", { length: 500 }).notNull(),
+    description: text("description").notNull(),
+    categoryCode: varchar("categoryCode", { length: 64 }).notNull(),
+    tags: json("tags").$type<string[]>().notNull(),
+    visibility: mysqlEnum("visibility", ["public", "private", "nda"]).default("public").notNull(),
+    status: mysqlEnum("status", ["draft", "published", "collaborating", "converted", "archived"]).default("draft").notNull(),
+    coverFileId: int("coverFileId").references(() => storedFiles.id),
+    authorizationVersion: int("authorizationVersion").default(1).notNull(),
+    publishedAt: timestamp("publishedAt"),
+    convertedProjectId: int("convertedProjectId").references(() => projects.id),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+    deletedAt: timestamp("deletedAt"),
+  },
+  (table) => ({
+    convertedProjectUnique: uniqueIndex("ideas_converted_project_uq").on(table.convertedProjectId),
+    creatorStatusIndex: index("ideas_creator_status_idx").on(table.creatorAccountId, table.status, table.deletedAt),
+    publicFeedIndex: index("ideas_public_feed_idx").on(table.visibility, table.status, table.publishedAt),
+  }),
+);
+export type Idea = typeof ideas.$inferSelect;
+
+export const ideaAttachments = mysqlTable("idea_attachments",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    ideaId: int("ideaId").notNull().references(() => ideas.id),
+    fileId: int("fileId").notNull().references(() => storedFiles.id),
+    attachmentType: mysqlEnum("attachmentType", ["cover", "reference", "design", "other"]).default("other").notNull(),
+    confidentialityLevel: mysqlEnum("confidentialityLevel", ["PUBLIC", "INTERNAL", "CONFIDENTIAL", "NDA", "RESTRICTED"]).default("INTERNAL").notNull(),
+    sortOrder: int("sortOrder").default(0).notNull(),
+    uploadedBy: int("uploadedBy").notNull().references(() => users.id),
+    accessPolicyVersion: int("accessPolicyVersion").default(1).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    disabledAt: timestamp("disabledAt"),
+  },
+  (table) => ({
+    ideaFileUnique: uniqueIndex("idea_attachments_idea_file_uq").on(table.ideaId, table.fileId),
+    ideaStateIndex: index("idea_attachments_idea_state_idx").on(table.ideaId, table.disabledAt, table.sortOrder),
+  }),
+);
+export type IdeaAttachment = typeof ideaAttachments.$inferSelect;
+
+export const ideaCollaborationInvitations = mysqlTable("idea_collaboration_invitations",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    ideaId: int("ideaId").notNull().references(() => ideas.id),
+    inviterAccountId: int("inviterAccountId").notNull().references(() => users.id),
+    invitedAccountId: int("invitedAccountId").notNull().references(() => users.id),
+    invitedIdentityId: int("invitedIdentityId").notNull().references(() => businessIdentities.id),
+    requestedRole: mysqlEnum("requestedRole", ["designer", "engineer", "viewer"]).notNull(),
+    status: mysqlEnum("status", ["pending", "accepted", "declined", "revoked", "expired"]).default("pending").notNull(),
+    activeDedupeKey: varchar("activeDedupeKey", { length: 191 }),
+    message: varchar("message", { length: 1000 }),
+    ndaRequired: boolean("ndaRequired").default(false).notNull(),
+    expiresAt: timestamp("expiresAt").notNull(),
+    acceptedAt: timestamp("acceptedAt"),
+    requestId: varchar("requestId", { length: 64 }).notNull(),
+    version: int("version").default(1).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({
+    requestUnique: uniqueIndex("idea_invitations_request_uq").on(table.requestId),
+    activeDedupeUnique: uniqueIndex("idea_invitations_active_dedupe_uq").on(table.activeDedupeKey),
+    recipientStatusIndex: index("idea_invitations_recipient_status_idx").on(table.invitedAccountId, table.status, table.expiresAt),
+    ideaStatusIndex: index("idea_invitations_idea_status_idx").on(table.ideaId, table.status),
+  }),
+);
+export type IdeaCollaborationInvitation = typeof ideaCollaborationInvitations.$inferSelect;
+
+export const ideaNdaAcceptances = mysqlTable("idea_nda_acceptances",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    ideaId: int("ideaId").notNull().references(() => ideas.id),
+    accountId: int("accountId").notNull().references(() => users.id),
+    identityId: int("identityId").notNull().references(() => businessIdentities.id),
+    ndaVersion: varchar("ndaVersion", { length: 64 }).notNull(),
+    acceptedAt: timestamp("acceptedAt").defaultNow().notNull(),
+    revokedAt: timestamp("revokedAt"),
+    requestId: varchar("requestId", { length: 64 }).notNull(),
+  },
+  (table) => ({
+    ideaAccountIdentityUnique: uniqueIndex("idea_nda_idea_account_identity_uq").on(table.ideaId, table.accountId, table.identityId),
+    requestUnique: uniqueIndex("idea_nda_request_uq").on(table.requestId),
+    accountStateIndex: index("idea_nda_account_state_idx").on(table.accountId, table.revokedAt),
+  }),
+);
+export type IdeaNdaAcceptance = typeof ideaNdaAcceptances.$inferSelect;

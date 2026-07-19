@@ -965,7 +965,9 @@ export async function acceptMilestoneTransaction(milestoneId: number, ownerId: n
     const remaining = milestoneList.filter((m) => m.id !== milestoneId && m.status !== "accepted" && m.status !== "cancelled");
     if (remaining.length === 0) {
       await tx.update(projects).set({ status: "completed", completedAt: new Date() }).where(eq(projects.id, project.id));
-      await tx.update(needs).set({ status: "solved" }).where(eq(needs.id, project.needId));
+      if (project.needId != null) {
+        await tx.update(needs).set({ status: "solved" }).where(eq(needs.id, project.needId));
+      }
       const existingOrder = await tx.select().from(orders).where(and(eq(orders.orderType, "project"), eq(orders.refId, project.id))).limit(1);
       if (existingOrder.length === 0) {
         await tx.insert(orders).values({

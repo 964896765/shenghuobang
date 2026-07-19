@@ -211,6 +211,13 @@
       "when": 1784426953790,
       "tag": "0029_v33_a2_cyclic_invitation_foreign_keys",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "5",
+      "when": 1784454286992,
+      "tag": "0030_v33_b1_ideas_collaboration",
+      "breakpoints": true
     }
   ]
 }
