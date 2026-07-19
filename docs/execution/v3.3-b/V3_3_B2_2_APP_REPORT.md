@@ -86,7 +86,7 @@
 
 ## Commit SHA
 - B2.2 开发基线：`9f9912e3da011f4fb24cf9d0d6a86761693dddbc`
-- B2.2 App 提交：`TO_BE_FILLED_AFTER_COMMIT`
+- B2.2 App 提交：`af305f4560ff82c7eba42ccb0f0b20c77120317f`
 
 ## B3 待办
 - 里程碑成果验收与通过/拒绝
