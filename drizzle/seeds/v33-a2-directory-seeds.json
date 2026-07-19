@@ -1,0 +1,863 @@
+{
+  "identityTypes": [
+    {
+      "code": "consumer",
+      "name": "普通用户",
+      "description": "平台默认消费与需求发布身份",
+      "requiresCertification": false,
+      "isSystem": true,
+      "status": "active"
+    },
+    {
+      "code": "designer",
+      "name": "设计师",
+      "description": "提供设计方案与设计协作的专业身份",
+      "requiresCertification": true,
+      "isSystem": false,
+      "status": "active"
+    },
+    {
+      "code": "engineer",
+      "name": "工程师",
+      "description": "提供工程技术服务的专业身份",
+      "requiresCertification": true,
+      "isSystem": false,
+      "status": "active"
+    },
+    {
+      "code": "merchant",
+      "name": "商家",
+      "description": "提供商品或商业服务的经营身份",
+      "requiresCertification": true,
+      "isSystem": false,
+      "status": "active"
+    },
+    {
+      "code": "repair_provider",
+      "name": "维修服务商",
+      "description": "提供维修与维护服务的专业身份",
+      "requiresCertification": true,
+      "isSystem": false,
+      "status": "active"
+    },
+    {
+      "code": "manufacturer",
+      "name": "制造商",
+      "description": "承担产品制造与交付的组织或专业身份",
+      "requiresCertification": true,
+      "isSystem": false,
+      "status": "active"
+    },
+    {
+      "code": "supplier",
+      "name": "供应商",
+      "description": "提供材料、设备或配套服务的身份",
+      "requiresCertification": true,
+      "isSystem": false,
+      "status": "active"
+    },
+    {
+      "code": "inspection_provider",
+      "name": "检验服务商",
+      "description": "提供独立检验与质量验证的专业身份",
+      "requiresCertification": true,
+      "isSystem": false,
+      "status": "active"
+    },
+    {
+      "code": "recycler",
+      "name": "回收服务商",
+      "description": "提供回收、再利用与处置服务的身份",
+      "requiresCertification": true,
+      "isSystem": false,
+      "status": "active"
+    },
+    {
+      "code": "enterprise_representative",
+      "name": "企业代表",
+      "description": "代表已授权企业参与平台业务的身份",
+      "requiresCertification": true,
+      "isSystem": false,
+      "status": "active"
+    }
+  ],
+  "certificationTypes": [
+    {
+      "code": "real_name",
+      "name": "实名认证",
+      "subjectType": "identity",
+      "reviewMode": "single",
+      "validityDays": null,
+      "sensitiveLevel": "sensitive",
+      "requirements": null,
+      "status": "active"
+    },
+    {
+      "code": "engineer_basic",
+      "name": "工程师基础认证",
+      "subjectType": "identity",
+      "reviewMode": "two_stage",
+      "validityDays": null,
+      "sensitiveLevel": "high_sensitive",
+      "requirements": null,
+      "status": "active"
+    },
+    {
+      "code": "merchant_business_license",
+      "name": "商家营业执照认证",
+      "subjectType": "either",
+      "reviewMode": "two_stage",
+      "validityDays": null,
+      "sensitiveLevel": "high_sensitive",
+      "requirements": null,
+      "status": "active"
+    }
+  ],
+  "capabilities": [
+    {
+      "code": "account.profile.view_self",
+      "domain": "account",
+      "name": "查看本人账号资料",
+      "description": "查看本人账号资料",
+      "riskLevel": "sensitive",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "account.profile.update_self",
+      "domain": "account",
+      "name": "修改本人非安全关键资料",
+      "description": "修改本人非安全关键资料",
+      "riskLevel": "sensitive",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "identity.list_self",
+      "domain": "identity",
+      "name": "查看本人业务身份",
+      "description": "查看本人业务身份",
+      "riskLevel": "sensitive",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "identity.profile.update_self",
+      "domain": "identity",
+      "name": "修改本人业务身份展示/接单资料",
+      "description": "修改本人业务身份展示/接单资料",
+      "riskLevel": "sensitive",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "identity.directory.view_public",
+      "domain": "identity",
+      "name": "查看专业身份公开目录/名片",
+      "description": "查看专业身份公开目录/名片",
+      "riskLevel": "sensitive",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "identity.create",
+      "domain": "identity",
+      "name": "创建可选业务身份",
+      "description": "创建可选业务身份",
+      "riskLevel": "sensitive",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "identity.switch",
+      "domain": "identity",
+      "name": "选择身份工作台偏好",
+      "description": "选择身份工作台偏好",
+      "riskLevel": "normal",
+      "defaultAuditMode": "deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "identity.suspend",
+      "domain": "identity",
+      "name": "主动停用本人身份",
+      "description": "主动停用本人身份",
+      "riskLevel": "sensitive",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "certification.submit_self",
+      "domain": "certification",
+      "name": "提交/补件本人身份认证",
+      "description": "提交/补件本人身份认证",
+      "riskLevel": "high",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "certification.view_self",
+      "domain": "certification",
+      "name": "查看本人认证及材料",
+      "description": "查看本人认证及材料",
+      "riskLevel": "high",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "organization.create",
+      "domain": "organization",
+      "name": "创建组织并成为首位 owner",
+      "description": "创建组织并成为首位 owner",
+      "riskLevel": "sensitive",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "organization.view",
+      "domain": "organization",
+      "name": "查看组织资料",
+      "description": "查看组织资料",
+      "riskLevel": "sensitive",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "organization.update",
+      "domain": "organization",
+      "name": "修改组织资料",
+      "description": "修改组织资料",
+      "riskLevel": "sensitive",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "organization.member.list",
+      "domain": "organization",
+      "name": "查看成员及岗位",
+      "description": "查看成员及岗位",
+      "riskLevel": "sensitive",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "organization.member.invite",
+      "domain": "organization",
+      "name": "发组织邀请",
+      "description": "发组织邀请",
+      "riskLevel": "sensitive",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "organization.invitation.accept",
+      "domain": "organization",
+      "name": "接受发给本人的组织邀请",
+      "description": "接受发给本人的组织邀请",
+      "riskLevel": "sensitive",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "organization.member.suspend",
+      "domain": "organization",
+      "name": "暂停成员",
+      "description": "暂停成员",
+      "riskLevel": "sensitive",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "organization.member.restore",
+      "domain": "organization",
+      "name": "恢复成员",
+      "description": "恢复成员",
+      "riskLevel": "sensitive",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "organization.member.remove",
+      "domain": "organization",
+      "name": "移除成员",
+      "description": "移除成员",
+      "riskLevel": "sensitive",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "organization.member.leave",
+      "domain": "organization",
+      "name": "主动退出",
+      "description": "主动退出",
+      "riskLevel": "sensitive",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "organization.member.assign_position",
+      "domain": "organization",
+      "name": "分配/撤销成员岗位",
+      "description": "分配/撤销成员岗位",
+      "riskLevel": "sensitive",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "organization.position.manage",
+      "domain": "organization",
+      "name": "建立岗位及能力模板",
+      "description": "建立岗位及能力模板",
+      "riskLevel": "sensitive",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "organization.owner.transfer",
+      "domain": "organization",
+      "name": "所有权二次确认转让",
+      "description": "所有权二次确认转让",
+      "riskLevel": "high",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "project.view",
+      "domain": "project",
+      "name": "查看项目详情和允许字段",
+      "description": "查看项目详情和允许字段",
+      "riskLevel": "sensitive",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "project.member.list",
+      "domain": "project",
+      "name": "查看项目成员",
+      "description": "查看项目成员",
+      "riskLevel": "sensitive",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "project.member.invite",
+      "domain": "project",
+      "name": "邀请项目成员",
+      "description": "邀请项目成员",
+      "riskLevel": "sensitive",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "project.invitation.accept",
+      "domain": "project",
+      "name": "接受发给本人/组织的项目邀请",
+      "description": "接受发给本人/组织的项目邀请",
+      "riskLevel": "sensitive",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "project.member.remove",
+      "domain": "project",
+      "name": "移除项目成员",
+      "description": "移除项目成员",
+      "riskLevel": "sensitive",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "project.role.assign",
+      "domain": "project",
+      "name": "分配项目角色",
+      "description": "分配项目角色",
+      "riskLevel": "sensitive",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "project.requirement.edit",
+      "domain": "project",
+      "name": "编辑/确认需求版本",
+      "description": "编辑/确认需求版本",
+      "riskLevel": "sensitive",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "project.file.upload",
+      "domain": "project",
+      "name": "上传项目文件",
+      "description": "上传项目文件",
+      "riskLevel": "high",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "project.file.view",
+      "domain": "project",
+      "name": "查看文件元数据/预览",
+      "description": "查看文件元数据/预览",
+      "riskLevel": "high",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "project.file.download",
+      "domain": "project",
+      "name": "下载项目文件",
+      "description": "下载项目文件",
+      "riskLevel": "high",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "project.file.disable",
+      "domain": "project",
+      "name": "禁用本人文件或管理文件",
+      "description": "禁用本人文件或管理文件",
+      "riskLevel": "high",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "project.milestone.start",
+      "domain": "project",
+      "name": "开始被分配里程碑",
+      "description": "开始被分配里程碑",
+      "riskLevel": "sensitive",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "project.milestone.submit",
+      "domain": "project",
+      "name": "提交交付申请验收",
+      "description": "提交交付申请验收",
+      "riskLevel": "high",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "project.milestone.accept",
+      "domain": "project",
+      "name": "验收交付",
+      "description": "验收交付",
+      "riskLevel": "high",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "project.milestone.request_revision",
+      "domain": "project",
+      "name": "要求返工",
+      "description": "要求返工",
+      "riskLevel": "high",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "project.change.propose",
+      "domain": "project",
+      "name": "发起范围/工期/金额变更",
+      "description": "发起范围/工期/金额变更",
+      "riskLevel": "high",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "project.change.approve",
+      "domain": "project",
+      "name": "同意对方变更",
+      "description": "同意对方变更",
+      "riskLevel": "high",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "project.finance.view",
+      "domain": "project",
+      "name": "查看项目账本摘要",
+      "description": "查看项目账本摘要",
+      "riskLevel": "high",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "project.payment.create",
+      "domain": "project",
+      "name": "从兼容项目入口创建统一支付意图",
+      "description": "从兼容项目入口创建统一支付意图",
+      "riskLevel": "high",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "need.view_public",
+      "domain": "need",
+      "name": "查看公开需求摘要",
+      "description": "查看公开需求摘要",
+      "riskLevel": "normal",
+      "defaultAuditMode": "deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "need.view_owned",
+      "domain": "need",
+      "name": "查看本人完整需求",
+      "description": "查看本人完整需求",
+      "riskLevel": "sensitive",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "need.create",
+      "domain": "need",
+      "name": "创建需求草稿",
+      "description": "创建需求草稿",
+      "riskLevel": "sensitive",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "need.update",
+      "domain": "need",
+      "name": "修改/发布/关闭本人需求",
+      "description": "修改/发布/关闭本人需求",
+      "riskLevel": "sensitive",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "quote.view",
+      "domain": "quote",
+      "name": "查看本人提交或收到的报价",
+      "description": "查看本人提交或收到的报价",
+      "riskLevel": "high",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "quote.submit",
+      "domain": "quote",
+      "name": "提交解决方案/报价",
+      "description": "提交解决方案/报价",
+      "riskLevel": "high",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "quote.accept",
+      "domain": "quote",
+      "name": "选择报价并创建项目",
+      "description": "选择报价并创建项目",
+      "riskLevel": "high",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "quote.reject",
+      "domain": "quote",
+      "name": "拒绝本人收到的报价",
+      "description": "拒绝本人收到的报价",
+      "riskLevel": "high",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "message.start",
+      "domain": "message",
+      "name": "基于有权资源发起会话",
+      "description": "基于有权资源发起会话",
+      "riskLevel": "sensitive",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "message.read",
+      "domain": "message",
+      "name": "读取参与会话",
+      "description": "读取参与会话",
+      "riskLevel": "sensitive",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "message.send",
+      "domain": "message",
+      "name": "向参与会话发消息",
+      "description": "向参与会话发消息",
+      "riskLevel": "sensitive",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "file.access",
+      "domain": "file",
+      "name": "通用文件预览/下载基础能力",
+      "description": "通用文件预览/下载基础能力",
+      "riskLevel": "high",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "platform.workspace.access",
+      "domain": "platform",
+      "name": "进入最小平台工作台",
+      "description": "进入最小平台工作台",
+      "riskLevel": "sensitive",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "platform.certification.queue_read",
+      "domain": "platform",
+      "name": "查看分配认证队列",
+      "description": "查看分配认证队列",
+      "riskLevel": "high",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "platform.certification.document_read",
+      "domain": "platform",
+      "name": "查看认证材料",
+      "description": "查看认证材料",
+      "riskLevel": "high",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "platform.certification.review_initial",
+      "domain": "platform",
+      "name": "认证初审",
+      "description": "认证初审",
+      "riskLevel": "high",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "platform.certification.review_final",
+      "domain": "platform",
+      "name": "认证复审/终审",
+      "description": "认证复审/终审",
+      "riskLevel": "high",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "platform.certification.revoke",
+      "domain": "platform",
+      "name": "撤销有效认证",
+      "description": "撤销有效认证",
+      "riskLevel": "high",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "platform.complaint.read",
+      "domain": "platform",
+      "name": "查看被分配投诉",
+      "description": "查看被分配投诉",
+      "riskLevel": "high",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "platform.complaint.investigate",
+      "domain": "platform",
+      "name": "调查、补证和协商",
+      "description": "调查、补证和协商",
+      "riskLevel": "high",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "platform.complaint.decide",
+      "domain": "platform",
+      "name": "作出投诉裁定",
+      "description": "作出投诉裁定",
+      "riskLevel": "high",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "platform.finance.read",
+      "domain": "platform",
+      "name": "查看分配财务记录",
+      "description": "查看分配财务记录",
+      "riskLevel": "high",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "platform.finance.review",
+      "domain": "platform",
+      "name": "审核退款/结算",
+      "description": "审核退款/结算",
+      "riskLevel": "high",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "platform.funds.execute",
+      "domain": "platform",
+      "name": "执行退款/释放",
+      "description": "执行退款/释放",
+      "riskLevel": "high",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "platform.audit.read",
+      "domain": "platform",
+      "name": "读取安全/权限审计",
+      "description": "读取安全/权限审计",
+      "riskLevel": "high",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    },
+    {
+      "code": "platform.permission.manage",
+      "domain": "platform",
+      "name": "分配/撤销平台职务与授权",
+      "description": "分配/撤销平台职务与授权",
+      "riskLevel": "high",
+      "defaultAuditMode": "allow_and_deny",
+      "status": "active",
+      "replacementCode": null
+    }
+  ],
+  "projectRoles": [
+    {
+      "code": "initiator",
+      "name": "发起人",
+      "description": "项目创建与业务发起责任角色",
+      "isSystem": true,
+      "status": "active"
+    },
+    {
+      "code": "project_lead",
+      "name": "项目负责人",
+      "description": "负责项目协调、成员与交付推进",
+      "isSystem": true,
+      "status": "active"
+    },
+    {
+      "code": "design_lead",
+      "name": "设计负责人",
+      "description": "负责设计方案与设计协作",
+      "isSystem": true,
+      "status": "active"
+    },
+    {
+      "code": "engineer",
+      "name": "工程师",
+      "description": "承担工程技术与实施任务",
+      "isSystem": true,
+      "status": "active"
+    },
+    {
+      "code": "supplier",
+      "name": "供应商",
+      "description": "承担材料、设备或配套供应",
+      "isSystem": true,
+      "status": "active"
+    },
+    {
+      "code": "manufacturer",
+      "name": "制造商",
+      "description": "承担产品制造与生产交付",
+      "isSystem": true,
+      "status": "active"
+    },
+    {
+      "code": "inspector",
+      "name": "检验员",
+      "description": "承担独立检验与质量检查",
+      "isSystem": true,
+      "status": "active"
+    },
+    {
+      "code": "reviewer",
+      "name": "验收人",
+      "description": "承担独立审查与交付验收",
+      "isSystem": true,
+      "status": "active"
+    },
+    {
+      "code": "viewer",
+      "name": "只读成员",
+      "description": "仅按授权查看项目允许信息",
+      "isSystem": true,
+      "status": "active"
+    }
+  ]
+}

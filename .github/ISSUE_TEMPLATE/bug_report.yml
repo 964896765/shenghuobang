@@ -1,0 +1,37 @@
+name: Bug 报告
+description: 报告可重复出现的问题
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes: { label: 当前版本, placeholder: v3.2.1 }
+    validations: { required: true }
+  - type: input
+    id: platform
+    attributes: { label: 运行平台, placeholder: Web / iOS / Android / Windows / Linux }
+    validations: { required: true }
+  - type: textarea
+    id: steps
+    attributes: { label: 复现步骤 }
+    validations: { required: true }
+  - type: textarea
+    id: actual
+    attributes: { label: 实际结果 }
+    validations: { required: true }
+  - type: textarea
+    id: expected
+    attributes: { label: 期望结果 }
+    validations: { required: true }
+  - type: textarea
+    id: logs
+    attributes: { label: 脱敏日志, description: 不要粘贴 Token、密码、连接字符串或个人信息 }
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: 涉及范围
+      options:
+        - label: 支付或资金
+        - label: 订单或项目状态
+        - label: 文件或隐私
+        - label: 权限或认证

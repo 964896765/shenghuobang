@@ -1,0 +1,3 @@
+ALTER TABLE `milestones` ADD CONSTRAINT `milestones_assignee_project_membership_fk` FOREIGN KEY (`projectId`,`assigneeProjectMembershipId`) REFERENCES `project_memberships`(`projectId`,`id`) ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE `milestones` ADD CONSTRAINT `milestones_submitter_project_membership_fk` FOREIGN KEY (`projectId`,`lastSubmittedByProjectMembershipId`) REFERENCES `project_memberships`(`projectId`,`id`) ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE `project_acceptances` ADD CONSTRAINT `project_acceptances_reviewer_project_membership_fk` FOREIGN KEY (`projectId`,`reviewerProjectMembershipId`) REFERENCES `project_memberships`(`projectId`,`id`) ON DELETE no action ON UPDATE no action;

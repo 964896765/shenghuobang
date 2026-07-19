@@ -1,0 +1,25 @@
+name: 功能建议
+description: 提议经过范围和风险评估的新能力
+title: "[Feature] "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes: { label: 要解决的问题 }
+    validations: { required: true }
+  - type: textarea
+    id: proposal
+    attributes: { label: 建议方案 }
+    validations: { required: true }
+  - type: textarea
+    id: alternatives
+    attributes: { label: 替代方案 }
+  - type: checkboxes
+    id: impact
+    attributes:
+      label: 可能影响
+      options:
+        - label: 数据库或迁移
+        - label: 支付或真实资金
+        - label: 权限或个人敏感信息
+        - label: 新外部账号、证书或服务

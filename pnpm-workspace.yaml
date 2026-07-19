@@ -1,0 +1,30 @@
+packages:
+  - .
+
+# pnpm 9 reads package.json#pnpm.overrides; pnpm 11 reads this root block.
+# Keep both lists identical until CI and packageManager move to one pnpm major.
+overrides:
+  '@babel/core@7.28.5': 7.29.6
+  '@xmldom/xmldom@0.8.11': 0.8.13
+  ajv@8.17.1: 8.18.0
+  brace-expansion@1.1.12: 1.1.13
+  brace-expansion@2.0.2: 2.0.3
+  fast-uri@3.1.0: 3.1.2
+  js-yaml@3.14.2: 3.15.0
+  js-yaml@4.1.1: 4.2.0
+  minimatch@3.1.2: 3.1.4
+  minimatch@9.0.5: 9.0.7
+  node-forge@1.3.3: 1.4.0
+  path-to-regexp@0.1.12: 0.1.13
+  picomatch@2.3.1: 2.3.2
+  picomatch@4.0.3: 4.0.4
+  postcss@8.4.49: 8.5.10
+  postcss@8.5.6: 8.5.10
+  qs@6.14.0: 6.15.2
+  shell-quote@1.8.3: 1.8.4
+  tar@7.5.2: 7.5.16
+  undici@6.22.0: 6.27.0
+  uuid@7.0.3: 11.1.1
+  ws@6.2.3: 6.2.4
+  ws@7.5.10: 7.5.11
+  yaml@2.8.2: 2.8.3

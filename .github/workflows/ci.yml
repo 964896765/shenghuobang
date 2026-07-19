@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: test_password
+          MYSQL_DATABASE: shenghuobang_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -ptest_password"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=30
+    env:
+      NODE_ENV: test
+      DATABASE_URL: mysql://root:test_password@127.0.0.1:3306/shenghuobang_test
+      MYSQL_INTEGRATION_URL: mysql://root:test_password@127.0.0.1:3306/mysql
+      JWT_SECRET: ci-only-jwt-secret-at-least-32-characters
+      FILE_SIGNING_SECRET: ci-only-file-secret-at-least-32-characters
+      CORS_ORIGINS: http://localhost:8081
+      PAYMENT_PROVIDER: sandbox
+      PUSH_PROVIDER: log
+      STORAGE_PROVIDER: local
+      LOCAL_UPLOAD_DIR: ./uploads-ci
+      EXPO_PUBLIC_API_BASE_URL: http://localhost:3000
+      EXPO_PUBLIC_WS_BASE_URL: ws://localhost:3000
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9.12.0
+          run_install: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm audit --prod
+      - run: pnpm validate:product-specs
+      - run: pnpm check:markdown-links
+      - run: pnpm check
+      - run: pnpm lint
+      - run: pnpm test
+      - run: pnpm build
+      - run: pnpm build:web
+      - run: pnpm exec expo install --check
+      - run: pnpm exec expo export --platform android --output-dir /tmp/shenghuobang-android-export --max-workers 1
+      - run: pnpm db:migrate
+      - run: pnpm test:seed:idempotent
+      - run: pnpm test:integration:mysql
+      - run: pnpm test:integration:v32
+      - run: pnpm test:location:mysql
+      - run: pnpm test:migrations:empty
