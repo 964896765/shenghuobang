@@ -145,7 +145,23 @@ assert(!service.includes("createProjectMembership"));
 assert(!service.includes("createOrder"));
 cases++;
 
-// 24. Project-level intention views only expose necessary public profile fields.
+// 24. Intention visibility reuses one resolver with default-deny public eligibility rules.
+assert(service.includes("resolveProjectIntentionEligibilityTx"));
+assert(service.includes("async resolveProjectIntentionEligibility(accountId: number, projectId: number)"));
+assert(service.includes("sourceIdea?.visibility === \"public\""));
+assert(service.includes("need?.visibility === \"public\""));
+assert(service.includes("requestedDataScope: \"PUBLIC\""));
+assert(service.includes("PROJECT_INTENTION_PUBLIC_DENY_STATUSES"));
+cases++;
+
+// 25. Register, project list and summary all reuse the same eligibility resolver.
+assert(service.includes("const eligibility = await resolveProjectIntentionEligibilityTx(tx, accountId, input.projectId);"));
+assert(service.includes("const eligibility = await resolveProjectIntentionEligibilityTx(tx, accountId, projectId);"));
+assert(acceptanceRouter.includes("projectDesignPrototypeService.resolveProjectIntentionEligibility(ctx.user.id, input.projectId)"));
+assert(acceptanceRouter.includes("projectDesignPrototypeService.projectIntentionSummary(ctx.user.id, input.projectId)"));
+cases++;
+
+// 26. Project-level intention views only expose necessary public profile fields.
 assert(service.includes("displayName"));
 assert(service.includes("avatarUrl"));
 assert(service.includes("cityName"));
@@ -153,10 +169,14 @@ assert(!service.includes("phone"));
 assert(!service.includes("email"));
 cases++;
 
-// 25. Summary returns counts only and does not leak user identities.
+// 27. Summary returns counts only and does not leak user identities.
 assert(service.includes("projectIntentionSummary"));
 assert(service.includes("counts ="));
 assert(!service.includes("summary: row.accountId"));
+cases++;
+
+// 28. Public summary no longer depends on project active-status guessing alone.
+assert(!service.includes("ACTIVE_PROJECT_STATUSES.has(project.status) || project.status === \"completed\""));
 cases++;
 
 console.log(`V3.3-B3.1 acceptance and intention backend contract tests: ${cases}/${cases} PASS`);

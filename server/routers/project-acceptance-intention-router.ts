@@ -154,13 +154,16 @@ export const projectIntentionsRouter = router({
   }),
 
   summary: protectedProcedure.input(z.object({ projectId: positiveId }).strict()).query(async ({ ctx, input }) => {
-    await authorizeOrThrow(ctx.user.id, {
-      capabilityCode: "project.intention.view_project",
-      projectId: input.projectId,
-      resourceType: "project",
-      resourceId: String(input.projectId),
-      purpose: "project_intention_summary",
-    });
-    return call(() => projectDesignPrototypeService.projectIntentionSummary(input.projectId));
+    const eligibility = await call(() => projectDesignPrototypeService.resolveProjectIntentionEligibility(ctx.user.id, input.projectId));
+    if (eligibility.isMember) {
+      await authorizeOrThrow(ctx.user.id, {
+        capabilityCode: "project.intention.view_project",
+        projectId: input.projectId,
+        resourceType: "project",
+        resourceId: String(input.projectId),
+        purpose: "project_intention_summary",
+      });
+    }
+    return call(() => projectDesignPrototypeService.projectIntentionSummary(ctx.user.id, input.projectId));
   }),
 });

@@ -4,11 +4,13 @@ import {
   designVersionFiles,
   designVersions,
   fileAccessLogs,
+  ideas,
   milestoneAcceptanceRounds,
   milestoneDeliverableSubmissionFiles,
   milestoneDeliverableSubmissions,
   milestoneRevisionRequests,
   milestones,
+  needs,
   projectFiles,
   projectIntentions,
   projectMembershipRoles,
@@ -21,6 +23,7 @@ import {
 import * as dbApi from "../db";
 import { requireDb, createNotification } from "../db";
 import { ENV } from "../_core/env";
+import { getAuthorizationService } from "../authorization";
 import { detectFile, sanitizeFileName, validateMimeAndExtension } from "../storage/file-policy";
 import { storagePut } from "../storage";
 import { DevelopmentFileScanner } from "../storage/scanner";
@@ -35,6 +38,8 @@ const HIGH_VALUE_INTENTION_TYPES = new Set(["trial", "purchase_interest", "colla
 const PHONE_PATTERN = /(?:\+?\d[\d\s-]{6,}\d)/;
 const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i;
 const DOCUMENT_PATTERN = /\b\d{15,18}[0-9Xx]\b/;
+const PUBLIC_NEED_STATUSES = new Set(["published", "collecting_solutions", "selecting_quote"]);
+const PROJECT_INTENTION_PUBLIC_DENY_STATUSES = new Set(["cancelled", "closed", "disputed", "refunded"]);
 
 export class ProjectDesignPrototypeServiceError extends Error {
   constructor(public readonly code: string) {
@@ -479,6 +484,107 @@ async function loadStoredFileByProjectFile(tx: any, projectFileId: number) {
   const [storedFile] = await tx.select().from(storedFiles).where(eq(storedFiles.storageKey, projectFile.storageKey)).limit(1);
   if (!storedFile) throw new ProjectDesignPrototypeServiceError("FILE_NOT_FOUND");
   return { projectFile, storedFile };
+}
+
+async function resolveProjectIntentionEligibilityTx(tx: any, accountId: number, projectId: number) {
+  const [project] = await tx.select().from(projects).where(eq(projects.id, projectId)).limit(1);
+  if (!project) {
+    return {
+      project: null,
+      isMember: false,
+      publicEligible: false,
+      summaryVisible: false,
+      reason: "not_found" as const,
+    };
+  }
+
+  const [membership] = await tx.select({
+    id: projectMemberships.id,
+  }).from(projectMemberships).where(and(
+    eq(projectMemberships.projectId, projectId),
+    eq(projectMemberships.accountId, accountId),
+    eq(projectMemberships.status, "active"),
+  )).limit(1);
+  const isLegacyMember = project.ownerId === accountId || project.engineerId === accountId;
+  if (membership || isLegacyMember) {
+    return {
+      project,
+      isMember: true,
+      publicEligible: true,
+      summaryVisible: true,
+      reason: "member" as const,
+    };
+  }
+
+  if (PROJECT_INTENTION_PUBLIC_DENY_STATUSES.has(project.status)) {
+    return {
+      project,
+      isMember: false,
+      publicEligible: false,
+      summaryVisible: false,
+      reason: "project_inactive" as const,
+    };
+  }
+
+  const [sourceIdea] = await tx.select({
+    id: ideas.id,
+    visibility: ideas.visibility,
+    status: ideas.status,
+  }).from(ideas).where(eq(ideas.convertedProjectId, project.id)).limit(1);
+  if (sourceIdea?.visibility === "public" && sourceIdea.status === "converted") {
+    return {
+      project,
+      isMember: false,
+      publicEligible: true,
+      summaryVisible: true,
+      reason: "public_idea" as const,
+    };
+  }
+
+  if (project.needId != null) {
+    const [need] = await tx.select({
+      id: needs.id,
+      visibility: needs.visibility,
+      status: needs.status,
+    }).from(needs).where(eq(needs.id, project.needId)).limit(1);
+    if (need?.visibility === "public" && PUBLIC_NEED_STATUSES.has(need.status)) {
+      return {
+        project,
+        isMember: false,
+        publicEligible: true,
+        summaryVisible: true,
+        reason: "public_need" as const,
+      };
+    }
+  }
+
+  const publicViewAuthorization = await getAuthorizationService().authorize({
+    accountId,
+    capabilityCode: "project.view",
+    projectId: project.id,
+    resourceType: "project",
+    resourceId: String(project.id),
+    requestedDataScope: "PUBLIC",
+    view: "detail",
+    purpose: "project_intention_public_eligibility",
+  });
+  if (publicViewAuthorization.allowed && publicViewAuthorization.resolvedDataScope === "PUBLIC") {
+    return {
+      project,
+      isMember: false,
+      publicEligible: true,
+      summaryVisible: true,
+      reason: "authorization_public" as const,
+    };
+  }
+
+  return {
+    project,
+    isMember: false,
+    publicEligible: false,
+    summaryVisible: false,
+    reason: "default_deny" as const,
+  };
 }
 
 export class ProjectDesignPrototypeService {
@@ -1384,11 +1490,20 @@ export class ProjectDesignPrototypeService {
     });
   }
 
+  async resolveProjectIntentionEligibility(accountId: number, projectId: number) {
+    const db = await requireDb();
+    return db.transaction((tx) => resolveProjectIntentionEligibilityTx(tx, accountId, projectId));
+  }
+
   async registerProjectIntention(accountId: number, input: ProjectIntentionRegisterInput) {
     const requestId = ensureRequestId(input.requestId);
     const note = validateIntentionNote(input.note);
     const db = await requireDb();
     const outcome = await db.transaction(async (tx) => {
+      const eligibility = await resolveProjectIntentionEligibilityTx(tx, accountId, input.projectId);
+      if (!eligibility.project || !eligibility.publicEligible) {
+        throw new ProjectDesignPrototypeServiceError("PROJECT_NOT_FOUND");
+      }
       const [existingByRequest] = await tx.select().from(projectIntentions)
         .where(eq(projectIntentions.requestId, requestId))
         .for("update")
@@ -1399,10 +1514,7 @@ export class ProjectDesignPrototypeService {
         }
         return { intention: existingByRequest, duplicate: true, project: null as any };
       }
-      const [project] = await tx.select().from(projects).where(eq(projects.id, input.projectId)).limit(1);
-      if (!project || !(ACTIVE_PROJECT_STATUSES.has(project.status) || project.status === "completed")) {
-        throw new ProjectDesignPrototypeServiceError("PROJECT_NOT_FOUND");
-      }
+      const project = eligibility.project;
       const dedupeKey = activeIntentionKey(project.id, accountId, input.intentionType);
       const [activeExisting] = await tx.select().from(projectIntentions)
         .where(eq(projectIntentions.activeDedupeKey, dedupeKey))
@@ -1514,11 +1626,16 @@ export class ProjectDesignPrototypeService {
       .innerJoin(projects, eq(projects.id, projectIntentions.projectId))
       .where(eq(projectIntentions.accountId, accountId))
       .orderBy(desc(projectIntentions.createdAt), desc(projectIntentions.id));
+    const visibleProjectIds = new Set((await Promise.all(rows.map(async (row) => {
+      const eligibility = await this.resolveProjectIntentionEligibility(accountId, row.projectId);
+      return eligibility.project && (eligibility.isMember || eligibility.publicEligible) ? row.projectId : null;
+    }))).filter((value): value is number => value != null));
     return rows.map((row) => ({
       id: row.id,
       projectId: row.projectId,
-      projectTitle: row.projectTitle,
-      projectStatus: row.projectStatus,
+      projectTitle: visibleProjectIds.has(row.projectId) ? row.projectTitle : "项目暂不可见",
+      projectStatus: visibleProjectIds.has(row.projectId) ? row.projectStatus : "hidden",
+      projectVisible: visibleProjectIds.has(row.projectId),
       intentionType: row.intentionType,
       note: row.note,
       status: row.status,
@@ -1528,10 +1645,12 @@ export class ProjectDesignPrototypeService {
   }
 
   async listProjectIntentions(accountId: number, projectId: number) {
-    const requestId = `project-intentions:${projectId}:${accountId}`;
     const db = await requireDb();
     return db.transaction(async (tx) => {
-      await requireProjectActor(tx, projectId, accountId, requestId, false);
+      const eligibility = await resolveProjectIntentionEligibilityTx(tx, accountId, projectId);
+      if (!eligibility.project || !eligibility.isMember) {
+        throw new ProjectDesignPrototypeServiceError("PROJECT_NOT_FOUND");
+      }
       const rows = await tx.select({
         id: projectIntentions.id,
         intentionType: projectIntentions.intentionType,
@@ -1548,7 +1667,6 @@ export class ProjectDesignPrototypeService {
         .where(and(eq(projectIntentions.projectId, projectId), eq(projectIntentions.status, "active")))
         .orderBy(desc(projectIntentions.createdAt), desc(projectIntentions.id));
       return rows.map((row) => ({
-        id: row.id,
         intentionType: row.intentionType,
         note: row.note,
         status: row.status,
@@ -1560,10 +1678,12 @@ export class ProjectDesignPrototypeService {
     });
   }
 
-  async projectIntentionSummary(projectId: number) {
+  async projectIntentionSummary(accountId: number, projectId: number) {
     const db = await requireDb();
-    const [project] = await db.select({ id: projects.id }).from(projects).where(eq(projects.id, projectId)).limit(1);
-    if (!project) throw new ProjectDesignPrototypeServiceError("PROJECT_NOT_FOUND");
+    const eligibility = await this.resolveProjectIntentionEligibility(accountId, projectId);
+    if (!eligibility.project || !eligibility.summaryVisible) {
+      throw new ProjectDesignPrototypeServiceError("PROJECT_NOT_FOUND");
+    }
     const rows = await db.select({
       intentionType: projectIntentions.intentionType,
       status: projectIntentions.status,
@@ -1577,7 +1697,12 @@ export class ProjectDesignPrototypeService {
     rows.forEach((row) => {
       if (row.intentionType in counts) counts[row.intentionType as keyof typeof counts] += 1;
     });
-    return { projectId, counts };
+    return {
+      projectId,
+      projectTitle: eligibility.project.title,
+      publicEligible: eligibility.publicEligible,
+      counts,
+    };
   }
 
   async designVersionFileAccessContext(accountId: number, designVersionFileId: number) {

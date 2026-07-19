@@ -22,6 +22,7 @@ function ProjectDetailInner() {
   const router = useRouter();
   const utils = trpc.useUtils();
   const detail = trpc.projects.detail.useQuery({ id: projectId }, { enabled: !Number.isNaN(projectId) });
+  const myIntentions = trpc.projectIntentions.listMine.useQuery();
 
   const [error, setError] = useState("");
   const [deliverTarget, setDeliverTarget] = useState<number | null>(null);
@@ -69,7 +70,7 @@ function ProjectDetailInner() {
   if (detail.isLoading) return <LoadingView />;
   if (!detail.data) return <EmptyState title="项目不存在或无权查看" />;
 
-  const { project, milestones, requirements, files, changes, acceptances, complaints, profileMap, myRole, orderId, myCapabilityCodes } = detail.data;
+  const { project, milestones, requirements, files, changes, acceptances, complaints, profileMap, myRole, orderId, myCapabilityCodes, myMembershipId } = detail.data;
   const currentRequirement = requirements[0];
   const myAgreementConfirmed = myRole === "owner" ? Boolean(project.ownerConfirmedAt) : Boolean(project.engineerConfirmedAt);
   const st = PROJECT_STATUS[project.status] ?? { label: project.status, tone: "gray" as const };
@@ -77,6 +78,19 @@ function ProjectDetailInner() {
   const otherName = profileMap[otherId]?.nickname ?? (myRole === "owner" ? "工程师" : "需求方");
   const canCreateDesignVersion = myCapabilityCodes.includes("project.design_version.create");
   const canCreatePrototypeMilestone = myCapabilityCodes.includes("project.milestone.create");
+  const canOpenAcceptance = myCapabilityCodes.some((code) => [
+    "project.prototype_acceptance.view",
+    "project.prototype_acceptance.review",
+    "project.prototype_acceptance.accept",
+    "project.prototype_acceptance.request_revision",
+    "project.prototype_revision.submit",
+  ].includes(code));
+  const canOpenIntentions = Boolean(myMembershipId);
+  const canViewProjectIntentions = myCapabilityCodes.includes("project.intention.view_project");
+  const acceptanceTarget = [...milestones]
+    .filter((item) => item.milestoneType === "prototype" && item.status === "submitted")
+    .sort((a, b) => (b.submittedAt ? new Date(b.submittedAt).getTime() : 0) - (a.submittedAt ? new Date(a.submittedAt).getTime() : 0))[0] ?? null;
+  const myProjectIntention = (myIntentions.data ?? []).find((item) => item.projectId === project.id && item.status === "active") ?? null;
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
@@ -140,6 +154,30 @@ function ProjectDetailInner() {
             ) : null}
           </View>
         </View>
+
+        {(canOpenAcceptance || canOpenIntentions) ? (
+          <View className="bg-surface rounded-2xl border border-border p-4 mt-3">
+            <Text className="text-base font-semibold text-foreground">验收与项目意向</Text>
+            <Text className="text-sm text-muted mt-1 leading-5">查看原型成果验收轮次、返工状态，以及当前项目的意向登记与我的意向状态。</Text>
+            {myProjectIntention ? (
+              <Text className="text-xs text-muted mt-3">
+                我的意向：{myProjectIntention.intentionType} · {formatTime(myProjectIntention.createdAt)}
+              </Text>
+            ) : null}
+            <View className="flex-row flex-wrap gap-2 mt-3">
+              {canOpenAcceptance && acceptanceTarget ? (
+                <PrimaryButton title="原型验收" variant="outline" small onPress={() => router.push(`/projects/prototype-acceptance/${acceptanceTarget.id}` as any)} />
+              ) : null}
+              {canOpenIntentions ? (
+                <PrimaryButton title="项目意向" variant="outline" small onPress={() => router.push(`/projects/project-intention/${project.id}` as any)} />
+              ) : null}
+              <PrimaryButton title="我的意向状态" variant="muted" small onPress={() => router.push("/projects/my-intentions" as any)} />
+              {canViewProjectIntentions ? (
+                <PrimaryButton title="意向统计名单" small onPress={() => router.push(`/projects/project-intentions/${project.id}` as any)} />
+              ) : null}
+            </View>
+          </View>
+        ) : null}
 
         {/* 正式需求与双方确认 */}
         {["pending_confirmation", "pending_agreement"].includes(project.status) ? (

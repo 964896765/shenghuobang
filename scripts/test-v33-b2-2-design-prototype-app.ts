@@ -97,11 +97,11 @@ assert(milestoneList.includes('const submittable = item.status === "in_progress"
 assert(milestoneDetail.includes('detail.data.milestone.status === "in_progress" && canSubmit'));
 cases++;
 
-// 12. Submitted milestones do not expose acceptance or rework actions in B2.2.
-for (const source of [milestoneList, milestoneDetail, deliverableSubmit]) {
-  assert(!source.includes("验收"));
-  assert(!source.includes("返工"));
-}
+// 12. B2.2 milestone list still avoids order/payment coupling even after later acceptance work lands.
+assert(!milestoneList.includes("支付"));
+assert(!milestoneList.includes("订单"));
+assert(!deliverableSubmit.includes("库存"));
+assert(!deliverableSubmit.includes("预售"));
 cases++;
 
 // 13. Deliverable submission calls the live routers and prevents duplicate pending clicks.

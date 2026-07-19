@@ -8,7 +8,9 @@ import { AppTextInput, EmptyState, ErrorState, FieldLabel, InfoRow, LoadingView,
 import { ScreenContainer } from "@/components/screen-container";
 import { formatTime } from "@/lib/labels";
 import {
+  PROTOTYPE_ACCEPTANCE_STATUS_LABELS,
   PROTOTYPE_MILESTONE_STATUS_LABELS,
+  PROTOTYPE_REVISION_STATUS_LABELS,
   PROTOTYPE_TASK_TYPE_LABELS,
   StableProjectRequestIds,
   parsePrototypeMilestoneDescription,
@@ -37,6 +39,10 @@ function PrototypeDeliverableSubmitInner() {
   const [uploadedFiles, setUploadedFiles] = useState<UploadedDeliverable[]>([]);
 
   const milestoneDetail = trpc.prototypeMilestones.detail.useQuery({ milestoneId }, { enabled: Number.isFinite(milestoneId), retry: 1 });
+  const acceptanceStatus = trpc.prototypeAcceptances.status.useQuery(
+    { milestoneId },
+    { enabled: milestoneDetail.data?.milestone.status === "submitted", retry: 1 },
+  );
   const projectDetail = trpc.projects.detail.useQuery({ id: projectId }, { enabled: Number.isFinite(projectId), retry: 1 });
 
   const uploadMutation = trpc.projects.uploadFile.useMutation({
@@ -48,6 +54,7 @@ function PrototypeDeliverableSubmitInner() {
 
   const capabilityCodes = projectDetail.data?.myCapabilityCodes ?? [];
   const canSubmit = capabilityCodes.includes("project.milestone.submit_deliverable");
+  const canRevisionSubmit = capabilityCodes.includes("project.prototype_revision.submit");
   const nextSubmissionVersion = useMemo(() => {
     if (!milestoneDetail.data?.submissions.length) return 1;
     return Math.max(...milestoneDetail.data.submissions.map((submission) => submission.submissionVersion)) + 1;
@@ -96,11 +103,14 @@ function PrototypeDeliverableSubmitInner() {
         setError("请填写成果说明。");
         return;
       }
-      if (!canSubmit) {
+      if (!milestoneDetail.data) return;
+      const isRevisionResubmit = milestoneDetail.data.milestone.status === "submitted"
+        && acceptanceStatus.data?.currentRound?.status === "revision_requested"
+        && acceptanceStatus.data?.revisionRequest?.status === "open";
+      if (!(isRevisionResubmit ? canRevisionSubmit : canSubmit)) {
         setError("当前没有提交成果的权限。");
         return;
       }
-      if (!milestoneDetail.data) return;
       const operationKey = `prototype-submit:${milestoneId}`;
       await submitMutation.mutateAsync({
         milestoneId,
@@ -114,6 +124,9 @@ function PrototypeDeliverableSubmitInner() {
         utils.prototypeMilestones.detail.invalidate({ milestoneId }),
         utils.prototypeMilestones.list.invalidate({ projectId }),
         utils.projects.detail.invalidate({ id: projectId }),
+        utils.prototypeAcceptances.status.invalidate({ milestoneId }),
+        utils.prototypeAcceptances.history.invalidate({ milestoneId }),
+        utils.prototypeAcceptances.revisionRequest.invalidate({ milestoneId }),
       ]);
       router.replace(`/projects/prototype-milestone/${milestoneId}` as never);
     } catch {
@@ -121,15 +134,16 @@ function PrototypeDeliverableSubmitInner() {
     }
   };
 
-  if (milestoneDetail.isLoading || projectDetail.isLoading) return <LoadingView />;
-  if (milestoneDetail.isError || projectDetail.isError) {
+  if (milestoneDetail.isLoading || projectDetail.isLoading || acceptanceStatus.isLoading) return <LoadingView />;
+  if (milestoneDetail.isError || projectDetail.isError || acceptanceStatus.isError) {
     return (
       <ErrorState
         title="成果提交页面加载失败"
-        hint={projectDesignPrototypeErrorMessage(milestoneDetail.error ?? projectDetail.error)}
+        hint={projectDesignPrototypeErrorMessage(milestoneDetail.error ?? projectDetail.error ?? acceptanceStatus.error)}
         onRetry={() => {
           void milestoneDetail.refetch();
           void projectDetail.refetch();
+          void acceptanceStatus.refetch();
         }}
       />
     );
@@ -140,12 +154,21 @@ function PrototypeDeliverableSubmitInner() {
   const parsed = parsePrototypeMilestoneDescription(milestone.description);
   const statusKey = milestone.status;
   const status = PROTOTYPE_MILESTONE_STATUS_LABELS[statusKey] ?? { label: statusKey, tone: "gray" as const };
+  const isRevisionResubmit = milestone.status === "submitted"
+    && acceptanceStatus.data?.currentRound?.status === "revision_requested"
+    && acceptanceStatus.data?.revisionRequest?.status === "open";
+  const revisionStatus = acceptanceStatus.data?.revisionRequest
+    ? (PROTOTYPE_REVISION_STATUS_LABELS[acceptanceStatus.data.revisionRequest.status] ?? { label: acceptanceStatus.data.revisionRequest.status, tone: "gray" as const })
+    : null;
+  const acceptanceRoundStatus = acceptanceStatus.data?.currentRound
+    ? (PROTOTYPE_ACCEPTANCE_STATUS_LABELS[acceptanceStatus.data.currentRound.status] ?? { label: acceptanceStatus.data.currentRound.status, tone: "gray" as const })
+    : null;
 
-  if (milestone.status !== "in_progress") {
+  if (milestone.status !== "in_progress" && !isRevisionResubmit) {
     return (
       <EmptyState
         title="当前状态不能提交成果"
-        hint="只有 in_progress 状态的里程碑可以继续上传成果并提交。"
+        hint="只有初次 in_progress 提交，或处于 revision_requested 的返工重提，才能继续提交新的成果版本。"
         actionTitle="查看里程碑详情"
         onAction={() => router.replace(`/projects/prototype-milestone/${milestoneId}` as never)}
       />
@@ -166,17 +189,45 @@ function PrototypeDeliverableSubmitInner() {
         </View>
         <View className="mt-3">
           <InfoRow label="提交版本" value={`#${nextSubmissionVersion}`} />
+          <InfoRow label="提交方式" value={isRevisionResubmit ? "返工重提" : "首次提交"} />
           <InfoRow label="计划开始" value={parsed.plannedStartAt || "-"} />
           <InfoRow label="计划结束" value={parsed.plannedEndAt || "-"} />
           <InfoRow label="启动时间" value={milestone.startedAt ? formatTime(milestone.startedAt) : "-"} />
         </View>
+        {acceptanceRoundStatus ? (
+          <View className="mt-3">
+            <StatusBadge label={`当前验收：${acceptanceRoundStatus.label}`} tone={acceptanceRoundStatus.tone} />
+          </View>
+        ) : null}
       </View>
 
       {error ? <Text className="text-sm text-error mt-3">{error}</Text> : null}
 
+      {isRevisionResubmit && acceptanceStatus.data?.revisionRequest ? (
+        <View className="bg-warning/10 rounded-2xl border border-warning/30 p-4 mt-4">
+          <View className="flex-row items-center justify-between gap-3">
+            <Text className="text-base font-semibold text-foreground">当前返工要求</Text>
+            {revisionStatus ? <StatusBadge label={revisionStatus.label} tone={revisionStatus.tone} small /> : null}
+          </View>
+          <Text className="text-sm text-foreground mt-2 leading-5">{acceptanceStatus.data.revisionRequest.reason}</Text>
+          <Text className="text-xs text-muted mt-2">
+            上一成果版本：#{acceptanceStatus.data.latestSubmission?.submissionVersion ?? "-"}
+          </Text>
+          {acceptanceStatus.data.revisionRequest.requirements.length > 0 ? (
+            <View className="mt-3">
+              {acceptanceStatus.data.revisionRequest.requirements.map((item, index) => (
+                <Text key={`${milestoneId}-${index}`} className="text-xs text-muted leading-5">
+                  {index + 1}. {item}
+                </Text>
+              ))}
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+
       <View className="bg-surface rounded-2xl border border-border p-4 mt-4">
         <FieldLabel label="成果说明" required />
-        <AppTextInput value={note} onChangeText={setNote} placeholder="说明本次成果的内容、验证方式和注意事项" multiline />
+        <AppTextInput value={note} onChangeText={setNote} placeholder={isRevisionResubmit ? "说明本次返工修正了哪些问题、如何验证" : "说明本次成果的内容、验证方式和注意事项"} multiline />
         <FieldLabel label="成果文件" />
         <Text className="text-xs text-muted mb-2">上传中的令牌不会持久化，离开页面后仅保留服务端正式记录。</Text>
         <PrimaryButton title="选择并上传成果文件" onPress={() => { void pickAndUpload(); }} loading={uploadMutation.isPending} />
@@ -200,10 +251,10 @@ function PrototypeDeliverableSubmitInner() {
 
       <View className="mt-2">
         <PrimaryButton
-          title="提交成果"
+          title={isRevisionResubmit ? "重新提交成果" : "提交成果"}
           onPress={() => { void submitDeliverable(); }}
           loading={submitMutation.isPending}
-          disabled={!canSubmit}
+          disabled={isRevisionResubmit ? !canRevisionSubmit : !canSubmit}
         />
       </View>
     </ScrollView>

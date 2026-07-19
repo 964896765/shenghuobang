@@ -8,6 +8,7 @@ import { ScreenContainer } from "@/components/screen-container";
 import { formatTime } from "@/lib/labels";
 import {
   ControlledAccessTracker,
+  PROTOTYPE_ACCEPTANCE_STATUS_LABELS,
   PROTOTYPE_MILESTONE_STATUS_LABELS,
   PROTOTYPE_TASK_TYPE_LABELS,
   parsePrototypeMilestoneDescription,
@@ -22,6 +23,10 @@ function PrototypeMilestoneDetailInner() {
   const accessTracker = useRef(new ControlledAccessTracker()).current;
   const [error, setError] = useState("");
   const detail = trpc.prototypeMilestones.detail.useQuery({ milestoneId }, { enabled: Number.isFinite(milestoneId), retry: 1 });
+  const acceptanceStatus = trpc.prototypeAcceptances.status.useQuery(
+    { milestoneId },
+    { enabled: Boolean(detail.data?.submissions.length), retry: 1 },
+  );
   const projectDetail = trpc.projects.detail.useQuery(
     { id: detail.data?.milestone.projectId ?? 0 },
     { enabled: Boolean(detail.data?.milestone.projectId) },
@@ -63,9 +68,13 @@ function PrototypeMilestoneDetailInner() {
   const capabilityCodes = projectDetail.data?.myCapabilityCodes ?? [];
   const canEdit = capabilityCodes.includes("project.milestone.edit");
   const canSubmit = capabilityCodes.includes("project.milestone.submit_deliverable");
+  const canRevisionSubmit = capabilityCodes.includes("project.prototype_revision.submit");
   const assignee = detail.data.milestone.assigneeProjectMembershipId ? memberMap.get(detail.data.milestone.assigneeProjectMembershipId)?.displayName : null;
   const starter = detail.data.milestone.startedByProjectMembershipId ? memberMap.get(detail.data.milestone.startedByProjectMembershipId)?.displayName : null;
   const lastSubmitter = detail.data.milestone.lastSubmittedByProjectMembershipId ? memberMap.get(detail.data.milestone.lastSubmittedByProjectMembershipId)?.displayName : null;
+  const acceptanceBadge = acceptanceStatus.data?.currentRound
+    ? (PROTOTYPE_ACCEPTANCE_STATUS_LABELS[acceptanceStatus.data.currentRound.status] ?? { label: acceptanceStatus.data.currentRound.status, tone: "gray" as const })
+    : null;
 
   return (
     <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 36 }}>
@@ -98,7 +107,18 @@ function PrototypeMilestoneDetailInner() {
           {detail.data.milestone.status === "in_progress" && canSubmit ? (
             <PrimaryButton title="提交成果" small onPress={() => router.push(`/projects/prototype-deliverable-submit?projectId=${detail.data.milestone.projectId}&milestoneId=${detail.data.milestone.id}` as never)} />
           ) : null}
+          {detail.data.milestone.status === "submitted" && acceptanceStatus.data?.currentRound ? (
+            <PrimaryButton title="验收状态" variant="outline" small onPress={() => router.push(`/projects/prototype-acceptance/${detail.data.milestone.id}` as never)} />
+          ) : null}
+          {detail.data.milestone.status === "submitted" && acceptanceStatus.data?.currentRound?.status === "revision_requested" && canRevisionSubmit ? (
+            <PrimaryButton title="重新提交成果" small onPress={() => router.push(`/projects/prototype-deliverable-submit?projectId=${detail.data.milestone.projectId}&milestoneId=${detail.data.milestone.id}` as never)} />
+          ) : null}
         </View>
+        {acceptanceBadge ? (
+          <View className="mt-3">
+            <StatusBadge label={`当前验收：${acceptanceBadge.label}`} tone={acceptanceBadge.tone} />
+          </View>
+        ) : null}
       </View>
 
       {error ? <Text className="text-sm text-error mt-3">{error}</Text> : null}
