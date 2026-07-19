@@ -41,7 +41,7 @@ jobs:
       EXPO_PUBLIC_API_BASE_URL: http://localhost:3000
       EXPO_PUBLIC_WS_BASE_URL: ws://localhost:3000
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
         with:
           version: 9.12.0
