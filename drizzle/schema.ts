@@ -255,12 +255,16 @@ export const milestones = mysqlTable("milestones", {
   description: text("description"),
   amount: int("amount").default(0),
   sortOrder: int("sortOrder").default(0).notNull(),
+  milestoneType: mysqlEnum("milestoneType", ["general", "prototype"]).default("general").notNull(),
+  prototypeTaskType: mysqlEnum("prototypeTaskType", ["designer", "engineer"]),
   status: mysqlEnum("status", ["pending", "in_progress", "submitted", "waiting_acceptance", "revision_required", "accepted", "overdue", "disputed", "cancelled"]).default("pending").notNull(),
   deliveryNote: text("deliveryNote"),
   revisionReason: text("revisionReason"),
+  startedAt: timestamp("startedAt"),
   submittedAt: timestamp("submittedAt"),
   acceptedAt: timestamp("acceptedAt"),
   assigneeProjectMembershipId: int("assigneeProjectMembershipId"),
+  startedByProjectMembershipId: int("startedByProjectMembershipId"),
   lastSubmittedByProjectMembershipId: int("lastSubmittedByProjectMembershipId"),
   authorizationVersion: int("authorizationVersion").default(1).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -275,6 +279,11 @@ export const milestones = mysqlTable("milestones", {
     columns: [table.projectId, table.lastSubmittedByProjectMembershipId],
     foreignColumns: [projectMemberships.projectId, projectMemberships.id],
     name: "milestones_submitter_project_membership_fk",
+  }),
+  starterProjectForeignKey: foreignKey({
+    columns: [table.projectId, table.startedByProjectMembershipId],
+    foreignColumns: [projectMemberships.projectId, projectMemberships.id],
+    name: "milestones_starter_project_membership_fk",
   }),
 }));
 export type Milestone = typeof milestones.$inferSelect;
@@ -358,6 +367,93 @@ export const projectFiles = mysqlTable("project_files",
   }),
 );
 export type ProjectFile = typeof projectFiles.$inferSelect;
+
+export const designVersions = mysqlTable("design_versions", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull().references(() => projects.id),
+  versionNo: int("versionNo").notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  summary: varchar("summary", { length: 500 }).notNull(),
+  changeNotes: text("changeNotes"),
+  status: mysqlEnum("status", ["draft", "submitted", "superseded", "withdrawn"]).default("draft").notNull(),
+  createdByProjectMembershipId: int("createdByProjectMembershipId").notNull(),
+  submittedByProjectMembershipId: int("submittedByProjectMembershipId"),
+  submittedAt: timestamp("submittedAt"),
+  authorizationVersion: int("authorizationVersion").default(1).notNull(),
+  requestId: varchar("requestId", { length: 64 }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  projectVersionUnique: uniqueIndex("design_versions_project_version_uq").on(table.projectId, table.versionNo),
+  requestUnique: uniqueIndex("design_versions_request_uq").on(table.requestId),
+  projectStatusIndex: index("design_versions_project_status_idx").on(table.projectId, table.status, table.submittedAt),
+  creatorProjectForeignKey: foreignKey({
+    columns: [table.projectId, table.createdByProjectMembershipId],
+    foreignColumns: [projectMemberships.projectId, projectMemberships.id],
+    name: "design_versions_creator_project_membership_fk",
+  }),
+  submitterProjectForeignKey: foreignKey({
+    columns: [table.projectId, table.submittedByProjectMembershipId],
+    foreignColumns: [projectMemberships.projectId, projectMemberships.id],
+    name: "design_versions_submitter_project_membership_fk",
+  }),
+}));
+export type DesignVersion = typeof designVersions.$inferSelect;
+
+export const designVersionFiles = mysqlTable("design_version_files", {
+  id: int("id").autoincrement().primaryKey(),
+  designVersionId: int("designVersionId").notNull().references(() => designVersions.id),
+  projectFileId: int("projectFileId").notNull().references(() => projectFiles.id),
+  fileRole: mysqlEnum("fileRole", ["source", "preview", "reference", "specification", "other"]).default("other").notNull(),
+  sortOrder: int("sortOrder").default(0).notNull(),
+  uploadedByProjectMembershipId: int("uploadedByProjectMembershipId").notNull().references(() => projectMemberships.id),
+  disabledAt: timestamp("disabledAt"),
+  accessPolicyVersion: int("accessPolicyVersion").default(1).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  designVersionFileUnique: uniqueIndex("design_version_files_version_file_uq").on(table.designVersionId, table.projectFileId),
+  versionStateIndex: index("design_version_files_version_state_idx").on(table.designVersionId, table.disabledAt, table.sortOrder),
+}));
+export type DesignVersionFile = typeof designVersionFiles.$inferSelect;
+
+export const milestoneDeliverableSubmissions = mysqlTable("milestone_deliverable_submissions", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull().references(() => projects.id),
+  milestoneId: int("milestoneId").notNull().references(() => milestones.id),
+  submissionVersion: int("submissionVersion").notNull(),
+  note: text("note").notNull(),
+  submittedByProjectMembershipId: int("submittedByProjectMembershipId").notNull(),
+  submittedAt: timestamp("submittedAt").defaultNow().notNull(),
+  requestId: varchar("requestId", { length: 64 }).notNull(),
+  status: mysqlEnum("status", ["submitted", "superseded"]).default("submitted").notNull(),
+  authorizationVersion: int("authorizationVersion").default(1).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  milestoneSubmissionVersionUnique: uniqueIndex("milestone_deliverable_submissions_milestone_version_uq").on(table.milestoneId, table.submissionVersion),
+  requestUnique: uniqueIndex("milestone_deliverable_submissions_request_uq").on(table.requestId),
+  projectMilestoneStatusIndex: index("milestone_deliverable_submissions_project_milestone_status_idx").on(table.projectId, table.milestoneId, table.status, table.submittedAt),
+  submitterProjectForeignKey: foreignKey({
+    columns: [table.projectId, table.submittedByProjectMembershipId],
+    foreignColumns: [projectMemberships.projectId, projectMemberships.id],
+    name: "milestone_deliverable_submissions_submitter_project_membership_fk",
+  }),
+}));
+export type MilestoneDeliverableSubmission = typeof milestoneDeliverableSubmissions.$inferSelect;
+
+export const milestoneDeliverableSubmissionFiles = mysqlTable("milestone_deliverable_submission_files", {
+  id: int("id").autoincrement().primaryKey(),
+  submissionId: int("submissionId").notNull().references(() => milestoneDeliverableSubmissions.id),
+  projectFileId: int("projectFileId").notNull().references(() => projectFiles.id),
+  sortOrder: int("sortOrder").default(0).notNull(),
+  disabledAt: timestamp("disabledAt"),
+  accessPolicyVersion: int("accessPolicyVersion").default(1).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  submissionFileUnique: uniqueIndex("milestone_deliverable_submission_files_submission_file_uq").on(table.submissionId, table.projectFileId),
+  submissionStateIndex: index("milestone_deliverable_submission_files_submission_state_idx").on(table.submissionId, table.disabledAt, table.sortOrder),
+}));
+export type MilestoneDeliverableSubmissionFile = typeof milestoneDeliverableSubmissionFiles.$inferSelect;
 
 /** 项目变更单 */
 export const projectChanges = mysqlTable("project_changes", {

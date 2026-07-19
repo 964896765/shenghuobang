@@ -106,16 +106,28 @@ const ENGINEER_CERTIFICATION_CAPABILITIES = new Set(["quote.submit", "project.mi
 const LEGACY_OWNER_CAPABILITIES = new Set([
   "project.view", "project.requirement.edit", "project.file.upload", "project.file.download", "project.file.disable",
   "project.milestone.accept", "project.milestone.request_revision", "project.change.propose", "project.change.approve",
+  "project.design_version.create", "project.design_version.edit", "project.design_version.submit", "project.design_version.view",
+  "project.design_file.upload", "project.design_file.download",
+  "project.milestone.create", "project.milestone.edit", "project.milestone.assign", "project.milestone.start", "project.milestone.submit_deliverable",
 ]);
 const LEGACY_ENGINEER_CAPABILITIES = new Set([
   "project.view", "project.requirement.edit", "project.file.upload", "project.file.download", "project.file.disable",
   "project.milestone.submit", "project.change.propose",
+  "project.design_version.create", "project.design_version.edit", "project.design_version.submit", "project.design_version.view",
+  "project.design_file.upload", "project.design_file.download",
+  "project.milestone.start", "project.milestone.submit_deliverable",
 ]);
 export const PROJECT_ROLE_FROZEN_CAPABILITIES: Readonly<Record<string, ReadonlySet<string>>> = {
   initiator: new Set([...LEGACY_OWNER_CAPABILITIES, "message.start", "message.read", "message.send"]),
   project_lead: new Set([...LEGACY_OWNER_CAPABILITIES, "message.start", "message.read", "message.send"]),
   engineer: new Set([...LEGACY_ENGINEER_CAPABILITIES, "message.start", "message.read", "message.send"]),
-  design_lead: new Set(["project.view", "project.file.upload", "project.file.download", "project.change.propose", "message.start", "message.read", "message.send"]),
+  design_lead: new Set([
+    "project.view", "project.file.upload", "project.file.download", "project.change.propose",
+    "project.design_version.create", "project.design_version.edit", "project.design_version.submit", "project.design_version.view",
+    "project.design_file.upload", "project.design_file.download",
+    "project.milestone.start", "project.milestone.submit_deliverable",
+    "message.start", "message.read", "message.send",
+  ]),
   supplier: new Set(["project.view", "project.file.upload", "project.file.download", "message.start", "message.read", "message.send"]),
   manufacturer: new Set(["project.view", "project.file.upload", "project.file.download", "message.start", "message.read", "message.send"]),
   inspector: new Set(["project.view", "project.file.download", "project.milestone.request_revision", "message.read"]),
@@ -235,12 +247,17 @@ function allowedStatuses(capabilityCode: string, current: string): string[] {
   if (capabilityCode === "idea.attachment.upload" || capabilityCode === "idea.collaborator.invite" || capabilityCode === "idea.collaborator.search") return ["draft", "published", "collaborating"];
   if (capabilityCode === "idea.invitation.accept" || capabilityCode === "idea.nda.accept") return ["published", "collaborating"];
   if (capabilityCode === "idea.convert_to_project") return ["published", "collaborating", "converted"];
-  if (capabilityCode === "file.access" || capabilityCode === "project.file.download") return ["available"];
+  if (capabilityCode === "file.access" || capabilityCode === "project.file.download" || capabilityCode === "project.design_file.download") return ["available"];
   if (capabilityCode.endsWith(".view") || capabilityCode.endsWith(".read") || capabilityCode.endsWith(".download")) return [current];
+  if (["project.design_version.create", "project.design_version.edit", "project.design_version.submit", "project.design_file.upload", "project.milestone.create"].includes(capabilityCode)) {
+    return ["pending_confirmation", "pending_agreement", "pending_payment", "in_progress", "waiting_acceptance", "revision"];
+  }
   if (capabilityCode === "project.requirement.edit") return ["pending_confirmation", "pending_agreement", "in_progress", "revision"];
   if (capabilityCode === "project.file.upload") return ["pending_confirmation", "pending_agreement", "pending_payment", "in_progress", "waiting_acceptance", "revision", "paused"];
   if (capabilityCode === "project.file.disable") return ["available"];
   if (capabilityCode === "project.milestone.submit") return ["in_progress", "revision_required"];
+  if (capabilityCode === "project.milestone.edit" || capabilityCode === "project.milestone.assign" || capabilityCode === "project.milestone.start") return ["pending"];
+  if (capabilityCode === "project.milestone.submit_deliverable") return ["in_progress"];
   if (capabilityCode === "project.milestone.accept" || capabilityCode === "project.milestone.request_revision") return ["submitted", "waiting_acceptance"];
   if (capabilityCode === "project.change.propose") return ["in_progress", "waiting_acceptance", "revision", "paused", "pending_confirmation"];
   if (capabilityCode === "project.change.approve") return ["pending_confirmation"];
