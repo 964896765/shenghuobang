@@ -95,6 +95,7 @@ const ACCOUNT_SELF_CAPABILITIES = new Set([
   "idea.archive",
   "idea.attachment.upload",
   "idea.attachment.download",
+  "idea.collaborator.search",
   "idea.collaborator.invite",
   "idea.invitation.accept",
   "idea.nda.accept",
@@ -231,7 +232,7 @@ function allowedStatuses(capabilityCode: string, current: string): string[] {
   if (capabilityCode === "idea.view_public" || capabilityCode === "idea.view_private" || capabilityCode === "idea.attachment.download") return [current];
   if (capabilityCode === "idea.edit" || capabilityCode === "idea.publish") return ["draft"];
   if (capabilityCode === "idea.archive") return ["draft", "published", "collaborating", "converted", "archived"];
-  if (capabilityCode === "idea.attachment.upload" || capabilityCode === "idea.collaborator.invite") return ["draft", "published", "collaborating"];
+  if (capabilityCode === "idea.attachment.upload" || capabilityCode === "idea.collaborator.invite" || capabilityCode === "idea.collaborator.search") return ["draft", "published", "collaborating"];
   if (capabilityCode === "idea.invitation.accept" || capabilityCode === "idea.nda.accept") return ["published", "collaborating"];
   if (capabilityCode === "idea.convert_to_project") return ["published", "collaborating", "converted"];
   if (capabilityCode === "file.access" || capabilityCode === "project.file.download") return ["available"];
@@ -274,11 +275,12 @@ export class DrizzleAuthorizationDataSource implements AuthorizationDataSource {
     }).from(workspacePreferences)
       .where(eq(workspacePreferences.accountId, request.accountId)).limit(1);
 
+    const capabilityLookupCode = request.capabilityCode === "idea.collaborator.search" ? "idea.collaborator.invite" : request.capabilityCode;
     const [capabilityRow] = await db.select({
       code: capabilities.code,
       status: capabilities.status,
       riskLevel: capabilities.riskLevel,
-    }).from(capabilities).where(and(eq(capabilities.code, request.capabilityCode), isNull(capabilities.deletedAt))).limit(1);
+    }).from(capabilities).where(and(eq(capabilities.code, capabilityLookupCode), isNull(capabilities.deletedAt))).limit(1);
 
     const requiredCertificationCodes = ENGINEER_CERTIFICATION_CAPABILITIES.has(request.capabilityCode) ? ["engineer_basic"] : [];
     let identityId = request.identityId ?? (workspacePreference?.workspaceType === "identity" ? workspacePreference.identityId : null);
@@ -474,7 +476,7 @@ export class DrizzleAuthorizationDataSource implements AuthorizationDataSource {
     return {
       account: accountRow ? { id: accountRow.id, status: accountRow.status, legacyRole: accountRow.legacyRole, currentRole: accountRow.currentRole ?? undefined } : null,
       capability: capabilityRow ? {
-        code: capabilityRow.code,
+        code: request.capabilityCode,
         status: capabilityRow.status,
         highRisk: capabilityRow.riskLevel === "high",
         requiredCertificationCodes,

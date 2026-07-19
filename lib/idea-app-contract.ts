@@ -17,6 +17,10 @@ export const IDEA_REASON_MESSAGES: Record<string, string> = {
   NOT_FOUND: "内容不存在或你暂时无权访问。",
   FORBIDDEN: "当前身份没有执行此操作的权限。",
   CONFLICT: "内容状态已变化，请刷新后重试。",
+  SEARCH_QUERY_INVALID: "请输入至少 2 个字符，且不要使用手机号、邮箱或证件号搜索。",
+  SEARCH_CURSOR_INVALID: "搜索结果已过期，请重新搜索。",
+  SEARCH_RATE_LIMITED: "搜索过于频繁，请稍后再试。",
+  INVITATION_TARGET_INVALID: "候选人信息已过期或失效，请重新搜索后再邀请。",
 };
 
 export function ideaErrorMessage(error: unknown): string {

@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { and, desc, eq, gt, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
 import {
   businessIdentities,
@@ -15,11 +16,13 @@ import {
   projectRoles,
   projects,
   storedFiles,
+  userProfiles,
   users,
 } from "../../drizzle/schema";
 import { applyFieldMask, getAuthorizationService } from "../authorization";
 import type { AuthorizationRequest, AuthorizationResult } from "../authorization";
 import { createNotification, requireDb } from "../db";
+import { writeAudit } from "./audit-service";
 import {
   assertIdeaTransition,
   ideaInvitationDedupeKey,
@@ -35,6 +38,11 @@ import {
   redactIdeaBeforeNda,
   type IdeaVisibility,
 } from "./idea-domain";
+import {
+  createIdeaCollaboratorTargetToken,
+  parseIdeaCollaboratorTargetToken,
+  type IdeaCollaboratorTargetClaims,
+} from "../storage/idea-collaborator-target-token";
 
 export interface IdeaAuthorizationPort {
   authorize(accountId: number, request: Omit<AuthorizationRequest, "accountId">): Promise<AuthorizationResult>;
@@ -117,13 +125,26 @@ export interface IdeaAttachmentInput {
 }
 
 export interface IdeaInvitationInput {
-  invitedAccountId: number;
-  invitedIdentityId: number;
+  invitedAccountId?: number;
+  invitedIdentityId?: number;
+  invitationTargetToken?: string;
   requestedRole: IdeaRequestedRole;
   message?: string;
   ndaRequired?: boolean;
   expiresAt: Date;
   requestId: string;
+}
+
+export interface IdeaCollaboratorSearchOptions {
+  ideaId: number;
+  query: string;
+  requestedRole: IdeaRequestedRole;
+  cityCode?: string;
+  categoryCode?: string;
+  limit?: number;
+  cursor?: string;
+  requesterIp?: string | null;
+  requesterUserAgent?: string | null;
 }
 
 export interface IdeaInvitationListOptions {
@@ -157,6 +178,80 @@ function normalizedTags(tags: readonly string[] | undefined): string[] {
 
 function limitValue(value: number | undefined): number {
   return Math.min(50, Math.max(1, value ?? 20));
+}
+
+function collaboratorSearchLimit(value: number | undefined): number {
+  return Math.min(20, Math.max(1, value ?? 10));
+}
+
+function escapeLike(value: string): string {
+  return value.replace(/[\\%_]/g, "\\$&");
+}
+
+function textValue(value: unknown, max = 128): string | null {
+  return typeof value === "string" && value.trim() ? value.trim().slice(0, max) : null;
+}
+
+function textList(value: unknown, maxItems = 8, itemMax = 32): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, maxItems)
+    .map((item) => item.slice(0, itemMax));
+}
+
+function profileCategory(profileData: Record<string, unknown> | null | undefined): string | null {
+  if (!profileData) return null;
+  return textValue(
+    profileData.publicCategory ??
+    profileData.publicCategoryCode ??
+    profileData.categoryCode ??
+    profileData.primaryCategory ??
+    profileData.category,
+    64,
+  );
+}
+
+const collaboratorSearchAttempts = new Map<string, number[]>();
+
+function withinCollaboratorSearchRateLimit(accountId: number, ip?: string | null): boolean {
+  const now = Date.now();
+  const key = `${accountId}:${ip?.trim() || "unknown"}`;
+  const recent = (collaboratorSearchAttempts.get(key) ?? []).filter((time) => now - time < 60_000);
+  recent.push(now);
+  collaboratorSearchAttempts.set(key, recent);
+  return recent.length <= 20;
+}
+
+const emailQuery = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
+const phoneQuery = /(?<!\d)1[3-9]\d{9}(?!\d)/;
+const identifierQuery = /(?<!\d)(?:\d{15}|\d{17}[\dXx]|\d{18}|\d{12,19})(?!\d)/;
+
+function queryLooksSensitive(value: string): boolean {
+  return emailQuery.test(value) || phoneQuery.test(value) || identifierQuery.test(value);
+}
+
+function collaboratorSearchAuditDetail(input: {
+  query: string;
+  requestedRole: IdeaRequestedRole;
+  cityCode?: string;
+  categoryCode?: string;
+  result?: "success" | "denied" | "failed";
+  reason?: string;
+  returned?: number;
+}) {
+  return {
+    query: input.query,
+    queryLength: input.query.length,
+    requestedRole: input.requestedRole,
+    cityCode: input.cityCode ?? null,
+    categoryCode: input.categoryCode ?? null,
+    returned: input.returned ?? 0,
+    reason: input.reason ?? null,
+    result: input.result ?? "success",
+  };
 }
 
 export function invitationRelationshipActive(status: string, expiresAt: Date, now: Date): boolean {
@@ -210,6 +305,70 @@ export class IdeaService {
 
   private async notifySafely(input: Parameters<IdeaNotificationPort["notify"]>[0]): Promise<void> {
     try { await this.notifications.notify(input); } catch { /* Notification delivery never rolls back committed business state. */ }
+  }
+
+  private async auditCollaboratorSearch(
+    accountId: number,
+    action: "idea.collaborator.search" | "idea.collaborator.search.reject",
+    detail: Record<string, unknown>,
+    ipAddress?: string | null,
+    userAgent?: string | null,
+  ): Promise<void> {
+    try {
+      await writeAudit({
+        actorId: accountId,
+        actorRole: "user",
+        action,
+        resourceType: "idea_collaborator_search",
+        result: action.endsWith(".reject") ? "denied" : "success",
+        riskLevel: action.endsWith(".reject") ? "high" : "sensitive",
+        detail,
+        ipAddress: ipAddress ?? undefined,
+        userAgent: userAgent ?? undefined,
+      });
+    } catch {
+      // Search audit must never block a user-visible business result.
+    }
+  }
+
+  private async resolveInvitationTarget(
+    tx: {
+      select: (...args: unknown[]) => any;
+    },
+    accountId: number,
+    ideaId: number,
+    input: IdeaInvitationInput,
+  ) {
+    const now = this.clock.now();
+    const resolvedDirect = Number.isSafeInteger(input.invitedAccountId) && Number.isSafeInteger(input.invitedIdentityId)
+      ? {
+        invitedAccountId: Number(input.invitedAccountId),
+        invitedIdentityId: Number(input.invitedIdentityId),
+        identityStatus: "active",
+        identityVersion: 0,
+        certificationStatus: "none",
+        certificationVersion: 0,
+      }
+      : null;
+
+    if (!input.invitationTargetToken) {
+      if (!resolvedDirect) throw new IdeaServiceError("INVITATION_TARGET_INVALID");
+      return resolvedDirect;
+    }
+
+    const claims = parseIdeaCollaboratorTargetToken(input.invitationTargetToken, undefined, now.getTime());
+    if (!claims) throw new IdeaServiceError("INVITATION_TARGET_INVALID");
+    if (claims.searcherAccountId !== accountId || claims.ideaId !== ideaId || claims.requestedRole !== input.requestedRole) {
+      throw new IdeaServiceError("INVITATION_TARGET_INVALID");
+    }
+    return {
+      invitedAccountId: claims.targetAccountId,
+      invitedIdentityId: claims.targetIdentityId,
+      identityStatus: claims.identityStatus,
+      identityVersion: claims.identityVersion,
+      certificationStatus: claims.certificationStatus,
+      certificationVersion: claims.certificationVersion,
+    };
   }
 
   async createDraft(accountId: number, input: IdeaDraftInput, requestId?: string | null) {
@@ -584,6 +743,209 @@ export class IdeaService {
     });
   }
 
+  async searchCollaborators(accountId: number, options: IdeaCollaboratorSearchOptions) {
+    await requireAllowed(this.authorization, accountId, {
+      capabilityCode: "idea.collaborator.search",
+      resourceType: "idea",
+      resourceId: String(options.ideaId),
+      purpose: "idea_collaborator_search",
+      view: "list",
+    });
+    const query = options.query.trim();
+    if (query.length < 2 || query.length > 50) throw new IdeaServiceError("SEARCH_QUERY_INVALID");
+    if (queryLooksSensitive(query)) {
+      await this.auditCollaboratorSearch(
+        accountId,
+        "idea.collaborator.search.reject",
+        collaboratorSearchAuditDetail({
+          query,
+          requestedRole: options.requestedRole,
+          cityCode: options.cityCode,
+          categoryCode: options.categoryCode,
+          reason: "sensitive_query_pattern",
+          result: "denied",
+        }),
+        options.requesterIp,
+        options.requesterUserAgent,
+      );
+      throw new IdeaServiceError("SEARCH_QUERY_INVALID");
+    }
+    if (!withinCollaboratorSearchRateLimit(accountId, options.requesterIp)) {
+      await this.auditCollaboratorSearch(
+        accountId,
+        "idea.collaborator.search.reject",
+        collaboratorSearchAuditDetail({
+          query,
+          requestedRole: options.requestedRole,
+          cityCode: options.cityCode,
+          categoryCode: options.categoryCode,
+          reason: "rate_limited",
+          result: "denied",
+        }),
+        options.requesterIp,
+        options.requesterUserAgent,
+      );
+      throw new IdeaServiceError("SEARCH_RATE_LIMITED");
+    }
+
+    const now = this.clock.now();
+    const requiredType = roleIdentityType(options.requestedRole);
+    const certificationCode = requiredCertificationForRole(options.requestedRole);
+    const limit = collaboratorSearchLimit(options.limit);
+    const pattern = `%${escapeLike(query.toLowerCase())}%`;
+    const cursorClaims = options.cursor ? parseIdeaCollaboratorTargetToken(options.cursor, undefined, now.getTime()) : null;
+    if (options.cursor && (!cursorClaims ||
+      cursorClaims.searcherAccountId !== accountId ||
+      cursorClaims.ideaId !== options.ideaId ||
+      cursorClaims.requestedRole !== options.requestedRole)) {
+      throw new IdeaServiceError("SEARCH_CURSOR_INVALID");
+    }
+    const db = await requireDb();
+
+    const conditions = [
+      eq(users.accountStatus, "active"),
+      eq(businessIdentities.status, "active"),
+      isNull(identityProfiles.deletedAt),
+      lt(businessIdentities.id, cursorClaims?.targetIdentityId ?? Number.MAX_SAFE_INTEGER),
+      sql`(
+        lower(coalesce(${identityProfiles.displayName}, '')) like ${pattern} escape '\\' or
+        lower(coalesce(${identityProfiles.professionalTitle}, '')) like ${pattern} escape '\\' or
+        lower(coalesce(${identityProfiles.cityName}, '')) like ${pattern} escape '\\' or
+        lower(coalesce(cast(${identityProfiles.skills} as char), '')) like ${pattern} escape '\\' or
+        lower(coalesce(cast(${identityProfiles.profileData} as char), '')) like ${pattern} escape '\\'
+      )`,
+      options.cityCode ? eq(identityProfiles.cityCode, options.cityCode.trim()) : undefined,
+      options.categoryCode
+        ? sql`(
+          json_unquote(json_extract(${identityProfiles.profileData}, '$.publicCategoryCode')) = ${options.categoryCode.trim()} or
+          json_unquote(json_extract(${identityProfiles.profileData}, '$.categoryCode')) = ${options.categoryCode.trim()} or
+          json_unquote(json_extract(${identityProfiles.profileData}, '$.publicCategory')) = ${options.categoryCode.trim()} or
+          json_unquote(json_extract(${identityProfiles.profileData}, '$.category')) = ${options.categoryCode.trim()}
+        )`
+        : undefined,
+      requiredType ? eq(identityTypes.code, requiredType) : undefined,
+      sql`not exists (
+        select 1
+        from ${ideaCollaborationInvitations} existing_invitation
+        where existing_invitation.ideaId = ${options.ideaId}
+          and existing_invitation.invitedIdentityId = ${businessIdentities.id}
+          and existing_invitation.requestedRole = ${options.requestedRole}
+          and (
+            existing_invitation.status = 'accepted' or
+            (existing_invitation.status = 'pending' and existing_invitation.expiresAt > ${now})
+          )
+      )`,
+    ];
+
+    const rawRows = await db
+      .select({
+        identityId: businessIdentities.id,
+        accountId: businessIdentities.accountId,
+        identityStatus: businessIdentities.status,
+        identityVersion: businessIdentities.version,
+        identityTypeCode: identityTypes.code,
+        identityTypeName: identityTypes.name,
+        displayName: identityProfiles.displayName,
+        professionalTitle: identityProfiles.professionalTitle,
+        skills: identityProfiles.skills,
+        cityName: identityProfiles.cityName,
+        profileData: identityProfiles.profileData,
+        avatarUrl: userProfiles.avatarUrl,
+      })
+      .from(businessIdentities)
+      .innerJoin(users, eq(users.id, businessIdentities.accountId))
+      .innerJoin(identityTypes, and(eq(identityTypes.id, businessIdentities.identityTypeId), isNull(identityTypes.deletedAt)))
+      .innerJoin(identityProfiles, eq(identityProfiles.identityId, businessIdentities.id))
+      .leftJoin(userProfiles, eq(userProfiles.userId, businessIdentities.accountId))
+      .where(and(...conditions))
+      .orderBy(desc(businessIdentities.id))
+      .limit(limit * 3);
+
+    const eligible: Array<{
+      displayName: string;
+      avatarUrl: string | null;
+      identityType: string;
+      professionalTitle: string | null;
+      publicSkills: string[];
+      publicCategory: string | null;
+      cityName: string | null;
+      certificationBadge: string | null;
+      invitationTargetToken: string;
+    }> = [];
+    for (const row of rawRows) {
+      if (row.accountId === accountId) continue;
+      const [certification] = certificationCode
+        ? await db.select({
+          status: certifications.status,
+          version: certifications.version,
+          typeName: certificationTypes.name,
+          expiresAt: certifications.expiresAt,
+        }).from(certifications)
+          .innerJoin(certificationTypes, eq(certificationTypes.id, certifications.certificationTypeId))
+          .where(and(
+            eq(certifications.subjectIdentityId, row.identityId),
+            eq(certificationTypes.code, certificationCode),
+            eq(certifications.status, "approved"),
+            or(isNull(certifications.expiresAt), gt(certifications.expiresAt, now)),
+          ))
+          .orderBy(desc(certifications.version), desc(certifications.id))
+          .limit(1)
+        : [undefined];
+      if (certificationCode && !certification) continue;
+
+      const publicCategory = profileCategory((row.profileData ?? null) as Record<string, unknown> | null);
+      const certificationStatus = certification ? "approved" : "none";
+      const certificationVersion = certification?.version ?? 0;
+      const certificationBadge = certification
+        ? textValue(certification.typeName, 64) ?? (options.requestedRole === "engineer" ? "工程师认证" : "实名认证")
+        : null;
+      const claims: IdeaCollaboratorTargetClaims = {
+        searcherAccountId: accountId,
+        targetAccountId: row.accountId,
+        targetIdentityId: row.identityId,
+        requestedRole: options.requestedRole,
+        ideaId: options.ideaId,
+        identityStatus: row.identityStatus,
+        identityVersion: row.identityVersion,
+        certificationStatus,
+        certificationVersion,
+        expires: Math.floor(now.getTime() / 1000) + 10 * 60,
+        nonce: crypto.randomUUID(),
+      };
+      eligible.push({
+        displayName: textValue(row.displayName, 128) ?? textValue(publicCategory, 64) ?? "可邀请协作者",
+        avatarUrl: textValue(row.avatarUrl, 500),
+        identityType: textValue(row.identityTypeName, 64) ?? textValue(row.identityTypeCode, 64) ?? "业务身份",
+        professionalTitle: textValue(row.professionalTitle, 128),
+        publicSkills: textList(row.skills),
+        publicCategory,
+        cityName: textValue(row.cityName, 64),
+        certificationBadge,
+        invitationTargetToken: createIdeaCollaboratorTargetToken(claims),
+      });
+      if (eligible.length >= limit) break;
+    }
+
+    await this.auditCollaboratorSearch(
+      accountId,
+      "idea.collaborator.search",
+      collaboratorSearchAuditDetail({
+        query,
+        requestedRole: options.requestedRole,
+        cityCode: options.cityCode,
+        categoryCode: options.categoryCode,
+        returned: eligible.length,
+      }),
+      options.requesterIp,
+      options.requesterUserAgent,
+    );
+
+    return {
+      items: eligible,
+      nextCursor: eligible.at(-1)?.invitationTargetToken ?? null,
+    };
+  }
+
   async inviteCollaborator(accountId: number, ideaId: number, input: IdeaInvitationInput) {
     await requireAllowed(this.authorization, accountId, {
       capabilityCode: "idea.collaborator.invite",
@@ -592,11 +954,12 @@ export class IdeaService {
       purpose: "idea_collaborator_invite",
       requestId: input.requestId,
     });
-    if (input.invitedAccountId === accountId) throw new IdeaServiceError("SELF_APPROVAL_FORBIDDEN");
     const now = this.clock.now();
     if (input.expiresAt.getTime() <= now.getTime()) throw new IdeaServiceError("INVITATION_EXPIRED");
     const db = await requireDb();
     const stored = await db.transaction(async (tx) => {
+      const targetInput = await this.resolveInvitationTarget(tx, accountId, ideaId, input);
+      if (targetInput.invitedAccountId === accountId) throw new IdeaServiceError("SELF_APPROVAL_FORBIDDEN");
       const [idea] = await tx.select().from(ideas).where(and(eq(ideas.id, ideaId), isNull(ideas.deletedAt))).for("update").limit(1);
       if (!idea || idea.status === "draft" || idea.status === "archived" || idea.status === "converted") throw new IdeaServiceError("RESOURCE_STATE_FORBIDDEN");
       const owner = idea.creatorAccountId === accountId;
@@ -608,33 +971,63 @@ export class IdeaService {
       if (!owner && !manager) throw new IdeaServiceError("RESOURCE_RELATION_REQUIRED");
 
       const [target] = await tx.select({ id: users.id, status: users.accountStatus }).from(users)
-        .where(eq(users.id, input.invitedAccountId)).for("update").limit(1);
+        .where(eq(users.id, targetInput.invitedAccountId)).for("update").limit(1);
       if (!target || target.status !== "active") throw new IdeaServiceError("ACCOUNT_INACTIVE");
       const [identity] = await tx.select({
         id: businessIdentities.id,
         accountId: businessIdentities.accountId,
         status: businessIdentities.status,
+        version: businessIdentities.version,
         typeCode: identityTypes.code,
       }).from(businessIdentities).innerJoin(identityTypes, eq(identityTypes.id, businessIdentities.identityTypeId)).where(and(
-        eq(businessIdentities.id, input.invitedIdentityId),
-        eq(businessIdentities.accountId, input.invitedAccountId),
+        eq(businessIdentities.id, targetInput.invitedIdentityId),
+        eq(businessIdentities.accountId, targetInput.invitedAccountId),
         isNull(identityTypes.deletedAt),
-      )).limit(1);
+      )).for("update").limit(1);
       const requiredType = roleIdentityType(input.requestedRole);
       if (!identity || identity.status !== "active" || (requiredType && identity.typeCode !== requiredType)) {
         throw new IdeaServiceError("IDENTITY_INACTIVE");
       }
-      const dedupeKey = ideaInvitationDedupeKey(ideaId, input.invitedAccountId, input.invitedIdentityId, input.requestedRole);
+      if (input.invitationTargetToken && (identity.status !== targetInput.identityStatus || identity.version !== targetInput.identityVersion)) {
+        throw new IdeaServiceError("INVITATION_TARGET_INVALID");
+      }
+      const certificationCode = requiredCertificationForRole(input.requestedRole);
+      let certificationVersion = 0;
+      let certificationStatus = "none";
+      if (certificationCode) {
+        const [certification] = await tx.select({
+          status: certifications.status,
+          version: certifications.version,
+          expiresAt: certifications.expiresAt,
+        }).from(certifications)
+          .innerJoin(certificationTypes, eq(certificationTypes.id, certifications.certificationTypeId))
+          .where(and(
+            eq(certifications.subjectIdentityId, identity.id),
+            eq(certificationTypes.code, certificationCode),
+          ))
+          .orderBy(desc(certifications.version), desc(certifications.id))
+          .limit(1);
+        const activeCertification = certification?.status === "approved" && (!certification.expiresAt || certification.expiresAt.getTime() > now.getTime());
+        certificationStatus = activeCertification ? "approved" : certification?.status ?? "none";
+        certificationVersion = certification?.version ?? 0;
+        if (!activeCertification) throw new IdeaServiceError("CERTIFICATION_INACTIVE");
+      }
+      if (input.invitationTargetToken &&
+        (certificationStatus !== targetInput.certificationStatus || certificationVersion !== targetInput.certificationVersion)) {
+        throw new IdeaServiceError("INVITATION_TARGET_INVALID");
+      }
+      const dedupeKey = ideaInvitationDedupeKey(ideaId, targetInput.invitedAccountId, targetInput.invitedIdentityId, input.requestedRole);
       const [byRequest] = await tx.select().from(ideaCollaborationInvitations).where(eq(ideaCollaborationInvitations.requestId, input.requestId)).limit(1);
       if (byRequest) {
-        if (byRequest.ideaId !== ideaId || byRequest.invitedAccountId !== input.invitedAccountId || byRequest.requestedRole !== input.requestedRole) {
+        if (byRequest.ideaId !== ideaId || byRequest.invitedAccountId !== targetInput.invitedAccountId || byRequest.invitedIdentityId !== targetInput.invitedIdentityId || byRequest.requestedRole !== input.requestedRole) {
           throw new IdeaServiceError("IDEMPOTENCY_CONFLICT");
         }
         return { idea, invitation: byRequest, duplicate: true };
       }
       const [existing] = await tx.select().from(ideaCollaborationInvitations).where(and(
         eq(ideaCollaborationInvitations.ideaId, ideaId),
-        eq(ideaCollaborationInvitations.invitedAccountId, input.invitedAccountId),
+        eq(ideaCollaborationInvitations.invitedAccountId, targetInput.invitedAccountId),
+        eq(ideaCollaborationInvitations.invitedIdentityId, targetInput.invitedIdentityId),
         eq(ideaCollaborationInvitations.requestedRole, input.requestedRole),
         inArray(ideaCollaborationInvitations.status, ["pending", "accepted"]),
       )).limit(1);
@@ -643,8 +1036,8 @@ export class IdeaService {
       const result = await tx.insert(ideaCollaborationInvitations).values({
         ideaId,
         inviterAccountId: accountId,
-        invitedAccountId: input.invitedAccountId,
-        invitedIdentityId: input.invitedIdentityId,
+        invitedAccountId: targetInput.invitedAccountId,
+        invitedIdentityId: targetInput.invitedIdentityId,
         requestedRole: input.requestedRole,
         activeDedupeKey: dedupeKey,
         message: input.message?.trim().slice(0, 1000),

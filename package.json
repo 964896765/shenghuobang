@@ -53,7 +53,8 @@
     "test:v33-a5-workspace-mobile": "tsx scripts/test-v33-a5-workspace-mobile.ts",
     "test:v33-b1-idea-service": "tsx scripts/test-v33-b1-idea-service.ts",
     "test:v33-b1-idea-routes": "tsx scripts/test-v33-b1-idea-routes.ts",
-    "test:v33-b1-idea-app": "tsx scripts/test-v33-b1-idea-app.ts"
+    "test:v33-b1-idea-app": "tsx scripts/test-v33-b1-idea-app.ts",
+    "test:v33-b1-1-collaborator-search": "tsx scripts/test-v33-b1-1-collaborator-search.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1085.0",

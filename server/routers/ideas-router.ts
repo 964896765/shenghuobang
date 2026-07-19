@@ -11,6 +11,7 @@ const visibility = z.enum(["public", "private", "nda"]);
 const requestedRole = z.enum(["designer", "engineer", "viewer"]);
 const confidentiality = z.enum(["PUBLIC", "INTERNAL", "CONFIDENTIAL", "NDA", "RESTRICTED"]);
 const limit = z.number().int().min(1).max(50).default(20);
+const searchLimit = z.number().int().min(1).max(20).default(10);
 const authorizationVersion = z.number().int().nonnegative();
 
 const draftFields = {
@@ -33,6 +34,7 @@ const safeReasonCodes = new Set([
   "RESOURCE_RELATION_REQUIRED", "RESOURCE_STATE_FORBIDDEN", "CONFIDENTIALITY_TOO_HIGH", "NDA_REQUIRED", "GRANT_INACTIVE",
   "CONCURRENT_MODIFICATION", "INVITATION_EXPIRED", "IDEMPOTENCY_CONFLICT", "CURSOR_INVALID", "PROJECT_ENGINEER_REQUIRED",
   "PROJECT_ROLE_INACTIVE", "IDEA_TITLE_INVALID", "IDEA_SUMMARY_INVALID", "IDEA_DESCRIPTION_INVALID", "IDEA_CATEGORY_INVALID",
+  "SEARCH_QUERY_INVALID", "SEARCH_CURSOR_INVALID", "SEARCH_RATE_LIMITED", "INVITATION_TARGET_INVALID",
 ]);
 
 export function ideaErrorToTrpc(error: unknown): never {
@@ -40,6 +42,7 @@ export function ideaErrorToTrpc(error: unknown): never {
   const candidate = error instanceof IdeaServiceError ? error.code : error instanceof Error ? error.message : "INTERNAL_ERROR";
   const reasonCode = safeReasonCodes.has(candidate) ? candidate : "INTERNAL_ERROR";
   if (reasonCode === "RESOURCE_RELATION_REQUIRED") throw new TRPCError({ code: "NOT_FOUND", message: reasonCode });
+  if (reasonCode === "SEARCH_RATE_LIMITED") throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: reasonCode });
   if (["RESOURCE_STATE_FORBIDDEN", "INVITATION_EXPIRED", "CONCURRENT_MODIFICATION", "IDEMPOTENCY_CONFLICT"].includes(reasonCode)) {
     throw new TRPCError({ code: "CONFLICT", message: reasonCode });
   }
@@ -82,6 +85,20 @@ export const ideasRouter = router({
   listMine: protectedProcedure.input(z.object({ limit, cursor: positiveId.optional() }).strict().optional())
     .query(({ ctx, input }) => invoke(() => ideaService.listMine(ctx.user.id, input ?? {}))),
 
+  searchCollaborators: protectedProcedure.input(z.object({
+    ideaId: positiveId,
+    query: z.string().trim().min(2).max(50),
+    requestedRole,
+    cityCode: z.string().trim().min(1).max(32).optional(),
+    categoryCode: z.string().trim().min(1).max(64).optional(),
+    limit: searchLimit.optional(),
+    cursor: z.string().trim().min(16).max(512).optional(),
+  }).strict()).query(({ ctx, input }) => invoke(() => ideaService.searchCollaborators(ctx.user.id, {
+    ...input,
+    requesterIp: ctx.req.ip,
+    requesterUserAgent: ctx.req.get("user-agent"),
+  }))),
+
   detail: protectedProcedure.input(z.object({ ideaId: positiveId }).strict())
     .query(({ ctx, input }) => invoke(() => ideaService.detail(ctx.user.id, input.ideaId))),
 
@@ -111,8 +128,9 @@ export const ideasRouter = router({
 
   inviteCollaborator: protectedProcedure.input(z.object({
     ideaId: positiveId,
-    invitedAccountId: positiveId,
-    invitedIdentityId: positiveId,
+    invitedAccountId: positiveId.optional(),
+    invitedIdentityId: positiveId.optional(),
+    invitationTargetToken: z.string().trim().min(16).max(2048).optional(),
     requestedRole,
     message: z.string().trim().max(1000).optional(),
     ndaRequired: z.boolean().optional(),

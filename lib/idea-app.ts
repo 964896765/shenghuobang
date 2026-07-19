@@ -19,6 +19,7 @@ export type IdeaVisibility = "public" | "private" | "nda";
 export type IdeaStatus = "draft" | "published" | "collaborating" | "converted" | "archived";
 export type IdeaAttachmentType = "cover" | "reference" | "design" | "other";
 export type IdeaConfidentiality = "PUBLIC" | "INTERNAL" | "CONFIDENTIAL" | "NDA" | "RESTRICTED";
+export type IdeaRequestedRole = "designer" | "engineer" | "viewer";
 
 export interface IdeaListItem {
   id: number;
@@ -32,6 +33,18 @@ export interface IdeaListItem {
   updatedAt?: Date | string | null;
   authorizationVersion?: number | null;
   convertedProjectId?: number | null;
+}
+
+export interface IdeaCollaboratorSearchItem {
+  displayName: string;
+  avatarUrl?: string | null;
+  identityType: string;
+  professionalTitle?: string | null;
+  publicSkills?: string[] | null;
+  publicCategory?: string | null;
+  cityName?: string | null;
+  certificationBadge?: string | null;
+  invitationTargetToken: string;
 }
 
 export function asIdeaListItems(value: readonly Partial<Record<string, unknown>>[]): IdeaListItem[] {
