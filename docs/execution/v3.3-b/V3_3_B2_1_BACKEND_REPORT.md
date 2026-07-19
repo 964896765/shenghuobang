@@ -123,7 +123,7 @@
 
 ## Commit SHA
 - B2 分支起点：`0320f4fc430e8c81e21b55d18c71463765c57d08`
-- 本轮交付提交：以本次 `feat(v3.3-b2): add design versions and prototype delivery backend` 提交 SHA 为准
+- B2.1 实现提交：`adafa4fd14bb2179da2581ed01c11719092fe705`
 
 ## B2.2 App 待办
 - 项目详情中的设计版本列表与详情 UI
