@@ -18,6 +18,7 @@ import { complaintsRouter, adminComplaintsRouter } from "./routers/complaint-rou
 import { adminRouter, auditLogsRouter, platformOperationsRouter } from "./routers/admin-router";
 import { accountProfileRouter, certificationRouter, identityRouter, organizationRouter, workspaceRouter } from "./routers/identity-organization-router";
 import { ideasRouter } from "./routers/ideas-router";
+import { prototypeAcceptancesRouter, projectIntentionsRouter } from "./routers/project-acceptance-intention-router";
 import { designVersionsRouter, prototypeMilestonesRouter } from "./routers/project-design-prototype-router";
 import * as verificationService from "./services/verification-service";
 import { listMyCertifications, listMyIdentities, submitIdentityCertification, updateAccountAndPublicProfile } from "./services/identity-service";
@@ -172,6 +173,8 @@ export const appRouter = router({
   ideas: ideasRouter,
   designVersions: designVersionsRouter,
   prototypeMilestones: prototypeMilestonesRouter,
+  prototypeAcceptances: prototypeAcceptancesRouter,
+  projectIntentions: projectIntentionsRouter,
   location: router({
     me: protectedProcedure.query(async ({ ctx }) => {
       const preference = await db.getLocationPreference(ctx.user.id);

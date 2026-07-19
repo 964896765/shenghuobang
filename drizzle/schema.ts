@@ -455,6 +455,86 @@ export const milestoneDeliverableSubmissionFiles = mysqlTable("milestone_deliver
 }));
 export type MilestoneDeliverableSubmissionFile = typeof milestoneDeliverableSubmissionFiles.$inferSelect;
 
+export const milestoneAcceptanceRounds = mysqlTable("milestone_acceptance_rounds", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull().references(() => projects.id),
+  milestoneId: int("milestoneId").notNull().references(() => milestones.id),
+  submissionId: int("submissionId").notNull().references(() => milestoneDeliverableSubmissions.id),
+  roundNo: int("roundNo").notNull(),
+  status: mysqlEnum("status", ["pending_review", "accepted", "revision_requested", "superseded"]).default("pending_review").notNull(),
+  reviewerProjectMembershipId: int("reviewerProjectMembershipId"),
+  decisionNote: text("decisionNote"),
+  requestId: varchar("requestId", { length: 64 }).notNull(),
+  decidedAt: timestamp("decidedAt"),
+  authorizationVersion: int("authorizationVersion").default(1).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  submissionUnique: uniqueIndex("milestone_acceptance_rounds_submission_uq").on(table.submissionId),
+  roundUnique: uniqueIndex("milestone_acceptance_rounds_milestone_round_uq").on(table.milestoneId, table.roundNo),
+  requestUnique: uniqueIndex("milestone_acceptance_rounds_request_uq").on(table.requestId),
+  milestoneStatusIndex: index("milestone_acceptance_rounds_milestone_status_idx").on(table.milestoneId, table.status, table.createdAt),
+  reviewerProjectForeignKey: foreignKey({
+    columns: [table.projectId, table.reviewerProjectMembershipId],
+    foreignColumns: [projectMemberships.projectId, projectMemberships.id],
+    name: "milestone_acceptance_rounds_reviewer_project_membership_fk",
+  }),
+}));
+export type MilestoneAcceptanceRound = typeof milestoneAcceptanceRounds.$inferSelect;
+
+export const milestoneRevisionRequests = mysqlTable("milestone_revision_requests", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull().references(() => projects.id),
+  milestoneId: int("milestoneId").notNull().references(() => milestones.id),
+  acceptanceRoundId: int("acceptanceRoundId").notNull().references(() => milestoneAcceptanceRounds.id),
+  reason: text("reason").notNull(),
+  requirementsJson: json("requirementsJson").$type<string[] | null>(),
+  assignedProjectMembershipId: int("assignedProjectMembershipId"),
+  dueAt: timestamp("dueAt"),
+  status: mysqlEnum("status", ["open", "resubmitted", "closed"]).default("open").notNull(),
+  createdByProjectMembershipId: int("createdByProjectMembershipId").notNull(),
+  resolvedBySubmissionId: int("resolvedBySubmissionId").references(() => milestoneDeliverableSubmissions.id),
+  requestId: varchar("requestId", { length: 64 }).notNull(),
+  authorizationVersion: int("authorizationVersion").default(1).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  acceptanceRoundUnique: uniqueIndex("milestone_revision_requests_round_uq").on(table.acceptanceRoundId),
+  requestUnique: uniqueIndex("milestone_revision_requests_request_uq").on(table.requestId),
+  milestoneStatusIndex: index("milestone_revision_requests_milestone_status_idx").on(table.milestoneId, table.status, table.createdAt),
+  assignedProjectForeignKey: foreignKey({
+    columns: [table.projectId, table.assignedProjectMembershipId],
+    foreignColumns: [projectMemberships.projectId, projectMemberships.id],
+    name: "milestone_revision_requests_assignee_project_membership_fk",
+  }),
+  creatorProjectForeignKey: foreignKey({
+    columns: [table.projectId, table.createdByProjectMembershipId],
+    foreignColumns: [projectMemberships.projectId, projectMemberships.id],
+    name: "milestone_revision_requests_creator_project_membership_fk",
+  }),
+}));
+export type MilestoneRevisionRequest = typeof milestoneRevisionRequests.$inferSelect;
+
+export const projectIntentions = mysqlTable("project_intentions", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull().references(() => projects.id),
+  accountId: int("accountId").notNull().references(() => users.id),
+  intentionType: mysqlEnum("intentionType", ["follow", "trial", "purchase_interest", "collaboration_interest"]).notNull(),
+  note: text("note"),
+  status: mysqlEnum("status", ["active", "withdrawn"]).default("active").notNull(),
+  activeDedupeKey: varchar("activeDedupeKey", { length: 191 }),
+  requestId: varchar("requestId", { length: 64 }).notNull(),
+  lastRequestId: varchar("lastRequestId", { length: 64 }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  requestUnique: uniqueIndex("project_intentions_request_uq").on(table.requestId),
+  activeDedupeUnique: uniqueIndex("project_intentions_active_dedupe_uq").on(table.activeDedupeKey),
+  accountProjectStatusIndex: index("project_intentions_account_project_status_idx").on(table.accountId, table.projectId, table.status),
+  projectTypeStatusIndex: index("project_intentions_project_type_status_idx").on(table.projectId, table.intentionType, table.status),
+}));
+export type ProjectIntention = typeof projectIntentions.$inferSelect;
+
 /** 项目变更单 */
 export const projectChanges = mysqlTable("project_changes", {
   id: int("id").autoincrement().primaryKey(),

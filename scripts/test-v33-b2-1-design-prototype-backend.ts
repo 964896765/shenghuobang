@@ -85,8 +85,10 @@ test("planned → in_progress → submitted 合法", () => {
   assert.match(service, /status: "submitted"/);
 });
 
-test("planned 不能直接 submitted", () => {
-  assert.match(service, /if \(milestone\.status !== "in_progress"\) throw new ProjectDesignPrototypeServiceError\("RESOURCE_STATE_FORBIDDEN"\)/);
+test("非返工状态不能重复提交成果", () => {
+  assert.match(service, /if \(milestone\.status === "in_progress"\)/);
+  assert.match(service, /else if \(milestone\.status === "submitted"\)/);
+  assert.match(service, /currentLatestRound\.status !== "revision_requested"/);
 });
 
 test("重复成果提交幂等", () => {

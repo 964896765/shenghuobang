@@ -100,6 +100,8 @@ const ACCOUNT_SELF_CAPABILITIES = new Set([
   "idea.invitation.accept",
   "idea.nda.accept",
   "idea.convert_to_project",
+  "project.intention.register",
+  "project.intention.withdraw",
 ]);
 
 const ENGINEER_CERTIFICATION_CAPABILITIES = new Set(["quote.submit", "project.milestone.submit"]);
@@ -109,6 +111,8 @@ const LEGACY_OWNER_CAPABILITIES = new Set([
   "project.design_version.create", "project.design_version.edit", "project.design_version.submit", "project.design_version.view",
   "project.design_file.upload", "project.design_file.download",
   "project.milestone.create", "project.milestone.edit", "project.milestone.assign", "project.milestone.start", "project.milestone.submit_deliverable",
+  "project.prototype_acceptance.view", "project.prototype_acceptance.review", "project.prototype_acceptance.accept", "project.prototype_acceptance.request_revision",
+  "project.prototype_revision.submit", "project.intention.view_project",
 ]);
 const LEGACY_ENGINEER_CAPABILITIES = new Set([
   "project.view", "project.requirement.edit", "project.file.upload", "project.file.download", "project.file.disable",
@@ -116,6 +120,7 @@ const LEGACY_ENGINEER_CAPABILITIES = new Set([
   "project.design_version.create", "project.design_version.edit", "project.design_version.submit", "project.design_version.view",
   "project.design_file.upload", "project.design_file.download",
   "project.milestone.start", "project.milestone.submit_deliverable",
+  "project.prototype_acceptance.view", "project.prototype_revision.submit",
 ]);
 export const PROJECT_ROLE_FROZEN_CAPABILITIES: Readonly<Record<string, ReadonlySet<string>>> = {
   initiator: new Set([...LEGACY_OWNER_CAPABILITIES, "message.start", "message.read", "message.send"]),
@@ -126,12 +131,13 @@ export const PROJECT_ROLE_FROZEN_CAPABILITIES: Readonly<Record<string, ReadonlyS
     "project.design_version.create", "project.design_version.edit", "project.design_version.submit", "project.design_version.view",
     "project.design_file.upload", "project.design_file.download",
     "project.milestone.start", "project.milestone.submit_deliverable",
+    "project.prototype_acceptance.view", "project.prototype_revision.submit",
     "message.start", "message.read", "message.send",
   ]),
   supplier: new Set(["project.view", "project.file.upload", "project.file.download", "message.start", "message.read", "message.send"]),
   manufacturer: new Set(["project.view", "project.file.upload", "project.file.download", "message.start", "message.read", "message.send"]),
-  inspector: new Set(["project.view", "project.file.download", "project.milestone.request_revision", "message.read"]),
-  reviewer: new Set(["project.view", "project.file.download", "project.milestone.accept", "project.milestone.request_revision", "message.read"]),
+  inspector: new Set(["project.view", "project.file.download", "project.milestone.request_revision", "project.prototype_acceptance.view", "project.prototype_acceptance.review", "project.prototype_acceptance.request_revision", "message.read"]),
+  reviewer: new Set(["project.view", "project.file.download", "project.milestone.accept", "project.milestone.request_revision", "project.prototype_acceptance.view", "project.prototype_acceptance.review", "project.prototype_acceptance.accept", "project.prototype_acceptance.request_revision", "message.read"]),
   viewer: new Set(["project.view", "project.file.download", "message.read"]),
 };
 
@@ -259,6 +265,9 @@ function allowedStatuses(capabilityCode: string, current: string): string[] {
   if (capabilityCode === "project.milestone.edit" || capabilityCode === "project.milestone.assign" || capabilityCode === "project.milestone.start") return ["pending"];
   if (capabilityCode === "project.milestone.submit_deliverable") return ["in_progress"];
   if (capabilityCode === "project.milestone.accept" || capabilityCode === "project.milestone.request_revision") return ["submitted", "waiting_acceptance"];
+  if (capabilityCode === "project.prototype_revision.submit") return ["submitted"];
+  if (["project.prototype_acceptance.view", "project.prototype_acceptance.review", "project.prototype_acceptance.accept", "project.prototype_acceptance.request_revision"].includes(capabilityCode)) return ["submitted"];
+  if (capabilityCode === "project.intention.view_project") return ["pending_confirmation", "pending_agreement", "pending_payment", "in_progress", "waiting_acceptance", "revision", "paused", "completed"];
   if (capabilityCode === "project.change.propose") return ["in_progress", "waiting_acceptance", "revision", "paused", "pending_confirmation"];
   if (capabilityCode === "project.change.approve") return ["pending_confirmation"];
   if (capabilityCode === "quote.submit") return ["published", "collecting_solutions", "selecting_quote", "submitted", "viewed", "negotiating"];

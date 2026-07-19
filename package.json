@@ -56,7 +56,8 @@
     "test:v33-b1-idea-app": "tsx scripts/test-v33-b1-idea-app.ts",
     "test:v33-b1-1-collaborator-search": "tsx scripts/test-v33-b1-1-collaborator-search.ts",
     "test:v33-b2-1-design-prototype-backend": "tsx scripts/test-v33-b2-1-design-prototype-backend.ts",
-    "test:v33-b2-2-design-prototype-app": "tsx scripts/test-v33-b2-2-design-prototype-app.ts"
+    "test:v33-b2-2-design-prototype-app": "tsx scripts/test-v33-b2-2-design-prototype-app.ts",
+    "test:v33-b3-1-acceptance-intent-backend": "tsx scripts/test-v33-b3-1-acceptance-intent-backend.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1085.0",

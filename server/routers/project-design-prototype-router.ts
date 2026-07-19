@@ -22,16 +22,16 @@ const taskType = z.enum(["designer", "engineer"]);
 function mapError(cause: unknown): never {
   if (cause instanceof TRPCError) throw cause;
   const code = cause instanceof ProjectDesignPrototypeServiceError ? cause.code : "INTERNAL_SERVER_ERROR";
-  if (["PROJECT_NOT_FOUND", "DESIGN_VERSION_NOT_FOUND", "DESIGN_VERSION_FILE_NOT_FOUND", "MILESTONE_NOT_FOUND", "PROJECT_FILE_NOT_FOUND", "FILE_NOT_FOUND", "DELIVERABLE_FILE_NOT_FOUND", "DELIVERABLE_SUBMISSION_NOT_FOUND"].includes(code)) {
+  if (["PROJECT_NOT_FOUND", "DESIGN_VERSION_NOT_FOUND", "DESIGN_VERSION_FILE_NOT_FOUND", "MILESTONE_NOT_FOUND", "PROJECT_FILE_NOT_FOUND", "FILE_NOT_FOUND", "DELIVERABLE_FILE_NOT_FOUND", "DELIVERABLE_SUBMISSION_NOT_FOUND", "ACCEPTANCE_ROUND_NOT_FOUND", "REVISION_REQUEST_NOT_FOUND", "PROJECT_INTENTION_NOT_FOUND"].includes(code)) {
     throw new TRPCError({ code: "NOT_FOUND", message: code });
   }
-  if (["PROJECT_MEMBERSHIP_INACTIVE", "RESOURCE_RELATION_REQUIRED", "PROJECT_INACTIVE"].includes(code)) {
+  if (["PROJECT_MEMBERSHIP_INACTIVE", "RESOURCE_RELATION_REQUIRED", "PROJECT_INACTIVE", "RESOURCE_SELF_REVIEW_FORBIDDEN"].includes(code)) {
     throw new TRPCError({ code: "FORBIDDEN", message: code });
   }
   if (["CONCURRENT_MODIFICATION", "IDEMPOTENCY_CONFLICT"].includes(code)) {
     throw new TRPCError({ code: "CONFLICT", message: code });
   }
-  if (["TITLE_INVALID", "SUMMARY_INVALID", "DELIVERABLE_NOTE_INVALID", "REQUEST_ID_INVALID", "PROTOTYPE_MILESTONE_REQUIRED", "MILESTONE_ASSIGNEE_INVALID", "MILESTONE_TASK_TYPE_INVALID", "DESIGN_VERSION_FILES_REQUIRED", "RESOURCE_STATE_FORBIDDEN"].includes(code)) {
+  if (["TITLE_INVALID", "SUMMARY_INVALID", "DELIVERABLE_NOTE_INVALID", "REQUEST_ID_INVALID", "PROTOTYPE_MILESTONE_REQUIRED", "MILESTONE_ASSIGNEE_INVALID", "MILESTONE_TASK_TYPE_INVALID", "DESIGN_VERSION_FILES_REQUIRED", "RESOURCE_STATE_FORBIDDEN", "REVISION_REASON_INVALID", "REVISION_REQUIREMENTS_INVALID", "INTENTION_NOTE_INVALID", "TEXT_INVALID"].includes(code)) {
     throw new TRPCError({ code: "BAD_REQUEST", message: code });
   }
   throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: code });
@@ -232,8 +232,16 @@ export const prototypeMilestonesRouter = router({
     expectedAuthorizationVersion: z.number().int().positive().optional(),
     requestId,
   }).strict()).mutation(async ({ ctx, input }) => call(async () => {
-    const detail = await projectDesignPrototypeService.prototypeMilestoneDetail(ctx.user.id, input.milestoneId);
-    await authorizeOrThrow(ctx.user.id, { capabilityCode: "project.milestone.submit_deliverable", projectId: detail.milestone.projectId, resourceType: "milestone", resourceId: String(input.milestoneId), expectedResourceVersion: detail.milestone.authorizationVersion, purpose: "project_prototype_milestone_submit_deliverable", requestId: input.requestId });
+    const submitContext = await projectDesignPrototypeService.prototypeDeliverableSubmitContext(ctx.user.id, input.milestoneId);
+    await authorizeOrThrow(ctx.user.id, {
+      capabilityCode: submitContext.capabilityCode,
+      projectId: submitContext.projectId,
+      resourceType: "milestone",
+      resourceId: String(input.milestoneId),
+      expectedResourceVersion: submitContext.milestoneAuthorizationVersion,
+      purpose: "project_prototype_milestone_submit_deliverable",
+      requestId: input.requestId,
+    });
     return projectDesignPrototypeService.submitPrototypeDeliverable(ctx.user.id, input);
   })),
 
