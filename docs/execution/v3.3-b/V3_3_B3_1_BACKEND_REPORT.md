@@ -140,7 +140,7 @@
 
 ## Commit SHA
 - B3.1 开发基线：`23857830db51387ea8fb3e950f5ae2a1b529ede5`
-- B3.1 后端提交：`TO_BE_FILLED_AFTER_COMMIT`
+- B3.1 后端提交：`c6d178f64e090ef0ed035c9eb545a9f73059e02a`
 
 ## B3.2 App 待办
 - 原型验收状态页与历史页
