@@ -9,6 +9,13 @@ import { startLogin } from "@/constants/app";
 
 const ENTRIES = [
   {
+    icon: "lightbulb.fill",
+    title: "发布创意",
+    desc: "保存草稿，设置公开、私密或 NDA 协作",
+    route: "/ideas/edit",
+    color: "#7C3AED",
+  },
+  {
     icon: "questionmark.circle.fill",
     title: "我遇到了问题",
     desc: "描述生活中的问题,AI 帮你整理成清晰需求",

@@ -197,18 +197,27 @@ function MerchantInquiries() {
 }
 
 export default function DiscoverScreen() {
+  const router = useRouter();
   const { role, isAuthenticated } = useRole();
   return (
     <ScreenContainer>
-      {role === "engineer" && isAuthenticated ? (
-        <EngineerHall />
-      ) : role === "merchant" && isAuthenticated ? (
-        <AuthGate>
-          <MerchantInquiries />
-        </AuthGate>
-      ) : (
-        <UserDiscover />
-      )}
+      <View className="flex-1">
+        <Pressable onPress={() => router.push("/ideas" as never)} className="mx-4 mt-2 mb-1 bg-primary/10 border border-primary/20 rounded-2xl p-3">
+          <Text className="text-base font-bold text-primary">创意协作</Text>
+          <Text className="text-xs text-muted mt-1">发现创意，邀请设计师和工程师共同落地</Text>
+        </Pressable>
+        <View className="flex-1">
+          {role === "engineer" && isAuthenticated ? (
+            <EngineerHall />
+          ) : role === "merchant" && isAuthenticated ? (
+            <AuthGate>
+              <MerchantInquiries />
+            </AuthGate>
+          ) : (
+            <UserDiscover />
+          )}
+        </View>
+      </View>
     </ScreenContainer>
   );
 }

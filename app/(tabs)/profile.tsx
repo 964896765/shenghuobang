@@ -114,6 +114,10 @@ function ProfileInner() {
 
       {/* 我的内容 */}
       <View className="mx-4 bg-surface rounded-2xl border border-border mb-3">
+        <MenuRow icon="lightbulb.fill" label="我的创意" onPress={() => router.push("/ideas/mine" as any)} color="#7C3AED" />
+        <View className="h-px bg-border mx-4" />
+        <MenuRow icon="person.2.fill" label="协作邀请" onPress={() => router.push("/ideas/invitations" as any)} color="#7C3AED" />
+        <View className="h-px bg-border mx-4" />
         <MenuRow icon="doc.text.fill" label="我的需求" onPress={() => router.push("/my-needs" as any)} />
         <View className="h-px bg-border mx-4" />
         <MenuRow icon="folder.fill" label="我的项目" onPress={() => router.push("/projects" as any)} color="#0D9488" />
