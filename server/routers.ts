@@ -730,7 +730,7 @@ export const appRouter = router({
       const project = await db.getProject(input.id);
       if (!project) throw new Error("项目不存在");
       const milestoneList = await db.listMilestones(input.id);
-      const [requirements, files, changes, acceptances, projectComplaints, milestoneComplaintGroups, projectOrder] = await Promise.all([
+      const [requirements, files, changes, acceptances, projectComplaints, milestoneComplaintGroups, projectOrder, members, memberAccess] = await Promise.all([
         db.listProjectRequirements(input.id),
         db.listProjectFiles(input.id),
         db.listProjectChanges(input.id),
@@ -738,6 +738,8 @@ export const appRouter = router({
         db.listComplaintsForRelated("project", input.id),
         Promise.all(milestoneList.map((milestone) => db.listComplaintsForRelated("milestone", milestone.id))),
         db.getOrderForReference("project", input.id),
+        db.listActiveProjectMembers(input.id),
+        db.getProjectMemberAccessView(input.id, ctx.user.id),
       ]);
       const allComplaints = [...projectComplaints, ...milestoneComplaintGroups.flat()].sort(
         (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
@@ -754,6 +756,10 @@ export const appRouter = router({
         complaints: allComplaints,
         orderId: projectOrder?.id ?? null,
         profileMap,
+        members,
+        myMembershipId: memberAccess?.membershipId ?? null,
+        myRoleCodes: memberAccess?.roleCodes ?? [],
+        myCapabilityCodes: memberAccess?.capabilityCodes ?? [],
         myRole: project.ownerId === ctx.user.id ? ("owner" as const) : ("engineer" as const),
       };
     }),

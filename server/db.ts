@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNotNull, isNull, like, lt, lte, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, like, lt, lte, ne, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { addScheduleDays, applyProjectAmountDelta, canCreateQuoteVersion, projectAgreementStatus } from "../shared/project-rules";
 import {
@@ -21,6 +21,9 @@ import {
   projectChanges,
   projectAcceptances,
   projectMemberships,
+  projectMembershipRoles,
+  projectRoleCapabilities,
+  projectRoles,
   complaints,
   complaintEvidence,
   listings,
@@ -289,6 +292,111 @@ export async function getProfilesByUserIds(userIds: number[]) {
   if (userIds.length === 0) return [];
   const db = await requireDb();
   return db.select().from(userProfiles).where(inArray(userProfiles.userId, userIds));
+}
+
+export async function listActiveProjectMembers(projectId: number) {
+  const db = await requireDb();
+  const rows = await db.select({
+    membershipId: projectMemberships.id,
+    accountId: projectMemberships.accountId,
+    businessIdentityId: projectMemberships.businessIdentityId,
+    confidentialityClearance: projectMemberships.confidentialityClearance,
+    joinedAt: projectMemberships.joinedAt,
+    userName: users.name,
+    nickname: userProfiles.nickname,
+    avatarUrl: userProfiles.avatarUrl,
+    cityName: userProfiles.cityName,
+    roleCode: projectMembershipRoles.roleCode,
+    roleName: projectRoles.name,
+  }).from(projectMemberships)
+    .innerJoin(users, eq(users.id, projectMemberships.accountId))
+    .leftJoin(userProfiles, eq(userProfiles.userId, projectMemberships.accountId))
+    .leftJoin(
+      projectMembershipRoles,
+      and(
+        eq(projectMembershipRoles.projectId, projectMemberships.projectId),
+        eq(projectMembershipRoles.projectMembershipId, projectMemberships.id),
+        eq(projectMembershipRoles.status, "active"),
+      ),
+    )
+    .leftJoin(
+      projectRoles,
+      and(
+        eq(projectRoles.code, projectMembershipRoles.roleCode),
+        eq(projectRoles.status, "active"),
+      ),
+    )
+    .where(and(eq(projectMemberships.projectId, projectId), eq(projectMemberships.status, "active")))
+    .orderBy(asc(projectMemberships.joinedAt), asc(projectMemberships.id));
+  const members = new Map<number, {
+    membershipId: number;
+    accountId: number;
+    businessIdentityId: number | null;
+    displayName: string;
+    avatarUrl: string | null;
+    cityName: string | null;
+    confidentialityClearance: string;
+    joinedAt: Date;
+    roleCodes: string[];
+    roleNames: string[];
+  }>();
+  for (const row of rows) {
+    const existing = members.get(row.membershipId);
+    const displayName = row.nickname?.trim() || row.userName?.trim() || `成员#${row.accountId}`;
+    if (existing) {
+      if (row.roleCode && !existing.roleCodes.includes(row.roleCode)) existing.roleCodes.push(row.roleCode);
+      if (row.roleName && !existing.roleNames.includes(row.roleName)) existing.roleNames.push(row.roleName);
+      continue;
+    }
+    members.set(row.membershipId, {
+      membershipId: row.membershipId,
+      accountId: row.accountId,
+      businessIdentityId: row.businessIdentityId,
+      displayName,
+      avatarUrl: row.avatarUrl,
+      cityName: row.cityName,
+      confidentialityClearance: row.confidentialityClearance,
+      joinedAt: row.joinedAt,
+      roleCodes: row.roleCode ? [row.roleCode] : [],
+      roleNames: row.roleName ? [row.roleName] : [],
+    });
+  }
+  return [...members.values()];
+}
+
+export async function getProjectMemberAccessView(projectId: number, accountId: number) {
+  const db = await requireDb();
+  const rows = await db.select({
+    membershipId: projectMemberships.id,
+    roleCode: projectMembershipRoles.roleCode,
+    capabilityCode: projectRoleCapabilities.capabilityCode,
+  }).from(projectMemberships)
+    .leftJoin(
+      projectMembershipRoles,
+      and(
+        eq(projectMembershipRoles.projectId, projectMemberships.projectId),
+        eq(projectMembershipRoles.projectMembershipId, projectMemberships.id),
+        eq(projectMembershipRoles.status, "active"),
+      ),
+    )
+    .leftJoin(
+      projectRoleCapabilities,
+      and(
+        eq(projectRoleCapabilities.roleCode, projectMembershipRoles.roleCode),
+        eq(projectRoleCapabilities.status, "active"),
+      ),
+    )
+    .where(and(
+      eq(projectMemberships.projectId, projectId),
+      eq(projectMemberships.accountId, accountId),
+      eq(projectMemberships.status, "active"),
+    ));
+  if (rows.length === 0) return null;
+  return {
+    membershipId: rows[0].membershipId,
+    roleCodes: [...new Set(rows.map((row) => row.roleCode).filter((value): value is string => Boolean(value)))],
+    capabilityCodes: [...new Set(rows.map((row) => row.capabilityCode).filter((value): value is string => Boolean(value)))],
+  };
 }
 
 // ============ 工程师 ============

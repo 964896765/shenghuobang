@@ -69,12 +69,14 @@ function ProjectDetailInner() {
   if (detail.isLoading) return <LoadingView />;
   if (!detail.data) return <EmptyState title="项目不存在或无权查看" />;
 
-  const { project, milestones, requirements, files, changes, acceptances, complaints, profileMap, myRole, orderId } = detail.data;
+  const { project, milestones, requirements, files, changes, acceptances, complaints, profileMap, myRole, orderId, myCapabilityCodes } = detail.data;
   const currentRequirement = requirements[0];
   const myAgreementConfirmed = myRole === "owner" ? Boolean(project.ownerConfirmedAt) : Boolean(project.engineerConfirmedAt);
   const st = PROJECT_STATUS[project.status] ?? { label: project.status, tone: "gray" as const };
   const otherId = myRole === "owner" ? project.engineerId : project.ownerId;
   const otherName = profileMap[otherId]?.nickname ?? (myRole === "owner" ? "工程师" : "需求方");
+  const canCreateDesignVersion = myCapabilityCodes.includes("project.design_version.create");
+  const canCreatePrototypeMilestone = myCapabilityCodes.includes("project.milestone.create");
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
@@ -106,6 +108,36 @@ function ProjectDetailInner() {
             <View className="flex-1"><PrimaryButton title={`文件 ${files.length}`} variant="outline" small onPress={() => router.push(`/project-files/${project.id}` as any)} /></View>
             <View className="flex-1"><PrimaryButton title={`变更 ${changes.length}`} variant="outline" small onPress={() => router.push(`/project-changes/${project.id}` as any)} /></View>
             <View className="flex-1"><PrimaryButton title={`争议 ${complaints.length}`} variant="outline" small onPress={() => complaints[0] ? router.push(`/complaints/${complaints[0].id}` as any) : router.push(`/complaints/create?projectId=${project.id}` as any)} /></View>
+          </View>
+        </View>
+
+        <View className="bg-surface rounded-2xl border border-border p-4 mt-3">
+          <Text className="text-base font-semibold text-foreground">设计版本</Text>
+          <Text className="text-sm text-muted mt-1 leading-5">查看设计历史、编辑草稿、上传设计文件，并通过受控文件路径打开版本资料。</Text>
+          <View className="flex-row gap-2 mt-3">
+            <View className="flex-1">
+              <PrimaryButton title="查看设计版本" variant="outline" small onPress={() => router.push(`/projects/design-versions/${project.id}` as any)} />
+            </View>
+            {canCreateDesignVersion ? (
+              <View className="flex-1">
+                <PrimaryButton title="创建设计草稿" small onPress={() => router.push(`/projects/design-version-edit?projectId=${project.id}` as any)} />
+              </View>
+            ) : null}
+          </View>
+        </View>
+
+        <View className="bg-surface rounded-2xl border border-border p-4 mt-3">
+          <Text className="text-base font-semibold text-foreground">原型里程碑</Text>
+          <Text className="text-sm text-muted mt-1 leading-5">管理原型阶段任务、指派执行成员、启动里程碑并在成果已提交前追踪状态。</Text>
+          <View className="flex-row gap-2 mt-3">
+            <View className="flex-1">
+              <PrimaryButton title="查看原型里程碑" variant="outline" small onPress={() => router.push(`/projects/prototype-milestones/${project.id}` as any)} />
+            </View>
+            {canCreatePrototypeMilestone ? (
+              <View className="flex-1">
+                <PrimaryButton title="创建里程碑" small onPress={() => router.push(`/projects/prototype-milestone-edit?projectId=${project.id}` as any)} />
+              </View>
+            ) : null}
           </View>
         </View>
 
