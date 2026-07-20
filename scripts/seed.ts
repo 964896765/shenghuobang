@@ -5,11 +5,12 @@
 import mysql, { type ResultSetHeader, type RowDataPacket } from "mysql2/promise";
 import * as dotenv from "dotenv";
 import path from "node:path";
+import { resolveMysqlUrlFromEnv } from "./lib/mysql-test-config.mjs";
 import { hashPassword } from "../server/_core/password";
 
 dotenv.config({ path: path.resolve(process.cwd(), ".env") });
 
-const DB_URL = process.env.DATABASE_URL ?? "mysql://root:password@localhost:3306/shenghuobang";
+const { rawUrl: DB_URL } = resolveMysqlUrlFromEnv({ consumerName: "seed script" });
 
 type DemoUser = { phone: string; name: string };
 

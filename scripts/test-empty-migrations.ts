@@ -4,6 +4,13 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import mysql, { type RowDataPacket } from "mysql2/promise";
 
+import {
+  assertSafeLocalTestDatabaseServer,
+  createMysqlConnectionOptions,
+  replaceMysqlDatabaseName,
+  resolveMysqlAdminUrlFromEnv,
+} from "./lib/mysql-test-config.mjs";
+
 const DATABASE_NAME = "shenghuobang_empty_migration";
 function run(command: string, args: string[], env: NodeJS.ProcessEnv) {
   return new Promise<void>((resolve, reject) => {
@@ -12,13 +19,14 @@ function run(command: string, args: string[], env: NodeJS.ProcessEnv) {
   });
 }
 async function main() {
-  const source = new URL(process.env.MYSQL_INTEGRATION_URL ?? process.env.DATABASE_URL ?? "mysql://root:password@127.0.0.1:3306/mysql");
-  const admin = await mysql.createConnection({ host: source.hostname, port: Number(source.port || 3306), user: decodeURIComponent(source.username), password: decodeURIComponent(source.password), multipleStatements: true });
-  const target = new URL(source.toString()); target.pathname = `/${DATABASE_NAME}`;
+  const { rawUrl: adminRawUrl } = resolveMysqlAdminUrlFromEnv({ consumerName: "empty migrations test" });
+  assertSafeLocalTestDatabaseServer(adminRawUrl, { consumerName: "empty migrations test" });
+  const admin = await mysql.createConnection(createMysqlConnectionOptions(adminRawUrl, { multipleStatements: true }));
+  const target = replaceMysqlDatabaseName(adminRawUrl, DATABASE_NAME);
   try {
     await admin.query(`DROP DATABASE IF EXISTS \`${DATABASE_NAME}\`; CREATE DATABASE \`${DATABASE_NAME}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`);
     const command = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
-    const env = { ...process.env, DATABASE_URL: target.toString() };
+    const env = { ...process.env, DATABASE_URL: target };
     await run(command, ["db:migrate"], env);
     await run(command, ["db:migrate"], env);
     await admin.query(`USE \`${DATABASE_NAME}\``);

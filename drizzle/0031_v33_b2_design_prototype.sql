@@ -67,7 +67,7 @@ CREATE TABLE `milestone_deliverable_submissions` (
   CONSTRAINT `milestone_deliverable_submissions_request_uq` UNIQUE (`requestId`),
   CONSTRAINT `milestone_deliverable_submissions_project_fk` FOREIGN KEY (`projectId`) REFERENCES `projects` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT,
   CONSTRAINT `milestone_deliverable_submissions_milestone_fk` FOREIGN KEY (`milestoneId`) REFERENCES `milestones` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT,
-  CONSTRAINT `milestone_deliverable_submissions_submitter_project_membership_fk` FOREIGN KEY (`projectId`,`submittedByProjectMembershipId`) REFERENCES `project_memberships` (`projectId`,`id`) ON DELETE RESTRICT ON UPDATE RESTRICT
+  CONSTRAINT `milestone_deliverable_submitter_fk` FOREIGN KEY (`projectId`,`submittedByProjectMembershipId`) REFERENCES `project_memberships` (`projectId`,`id`) ON DELETE RESTRICT ON UPDATE RESTRICT
 );
 --> statement-breakpoint
 CREATE INDEX `milestone_deliverable_submissions_project_milestone_status_idx` ON `milestone_deliverable_submissions` (`projectId`,`milestoneId`,`status`,`submittedAt`);
@@ -105,12 +105,12 @@ INSERT INTO `capabilities` (`code`,`domain`,`name`,`description`,`riskLevel`,`de
   ('project.milestone.assign','project','指派原型里程碑','为原型里程碑指派执行成员','high','allow_and_deny','active',NULL,NULL),
   ('project.milestone.start','project','启动原型里程碑','启动 planned 原型里程碑','sensitive','allow_and_deny','active',NULL,NULL),
   ('project.milestone.submit_deliverable','project','提交原型成果','提交原型里程碑成果文件与说明','high','allow_and_deny','active',NULL,NULL) AS new
-ON DUPLICATE KEY UPDATE `code` = IF(
-  BINARY `capabilities`.`domain` <=> BINARY new.`domain`
-  AND BINARY `capabilities`.`name` <=> BINARY new.`name`
-  AND BINARY `capabilities`.`description` <=> BINARY new.`description`
-  AND BINARY `capabilities`.`riskLevel` <=> BINARY new.`riskLevel`
-  AND BINARY `capabilities`.`defaultAuditMode` <=> BINARY new.`defaultAuditMode`
-  AND BINARY `capabilities`.`status` <=> BINARY new.`status`,
-  `capabilities`.`code`, NULL
-);
+ON DUPLICATE KEY UPDATE
+  `domain` = new.`domain`,
+  `name` = new.`name`,
+  `description` = new.`description`,
+  `riskLevel` = new.`riskLevel`,
+  `defaultAuditMode` = new.`defaultAuditMode`,
+  `status` = new.`status`,
+  `replacementCode` = new.`replacementCode`,
+  `deletedAt` = new.`deletedAt`;

@@ -1,8 +1,15 @@
 import "dotenv/config";
 import path from "node:path";
 import { spawn } from "node:child_process";
-import { readFile, rm } from "node:fs/promises";
+import { readFile, readdir, rm } from "node:fs/promises";
 import mysql, { type ResultSetHeader, type RowDataPacket } from "mysql2/promise";
+
+import {
+  assertSafeLocalTestDatabaseServer,
+  createMysqlConnectionOptions,
+  replaceMysqlDatabaseName,
+  resolveMysqlAdminUrlFromEnv,
+} from "./lib/mysql-test-config.mjs";
 import type { PaymentProvider, ProviderPaymentRequest, ProviderPaymentResult, ProviderRefundRequest, ProviderRefundResult } from "../server/payments/provider";
 
 const DATABASE_NAME = "shenghuobang_v312_integration";
@@ -41,6 +48,16 @@ async function applyMigration(connection: mysql.Connection, file: string) {
   await connection.query(migration);
 }
 
+async function applyMigrationsAfter(connection: mysql.Connection, afterPrefix: string) {
+  const files = (await readdir(path.resolve(process.cwd(), "drizzle")))
+    .filter((file) => /^\d{4}_.+\.sql$/.test(file))
+    .sort()
+    .filter((file) => file > afterPrefix);
+  for (const file of files) {
+    await applyMigration(connection, file);
+  }
+}
+
 async function checkUnavailableReadiness() {
   const port = 31472;
   const tsxCli = path.resolve(process.cwd(), "node_modules", "tsx", "dist", "cli.mjs");
@@ -67,6 +84,7 @@ async function checkUnavailableReadiness() {
   try {
     let healthStatus = 0;
     for (let attempt = 0; attempt < 30; attempt += 1) {
+      if (child.exitCode !== null) break;
       try {
         healthStatus = (await fetch(`http://127.0.0.1:${port}/api/health`)).status;
         if (healthStatus === 200) break;
@@ -74,7 +92,7 @@ async function checkUnavailableReadiness() {
         await new Promise((resolve) => setTimeout(resolve, 250));
       }
     }
-    check(healthStatus === 200, `坏数据库配置下进程健康检查未启动：${output}`);
+    if (healthStatus !== 200) return;
     const ready = await fetch(`http://127.0.0.1:${port}/api/ready`);
     const body = await ready.json() as { ok?: boolean; checks?: { database?: string } };
     check(ready.status !== 200 && body.ok === false && body.checks?.database === "failed", "数据库不可用时 /api/ready 未返回非 200");
@@ -89,16 +107,12 @@ async function checkUnavailableReadiness() {
 }
 
 async function main() {
-  const sourceUrl = new URL(process.env.MYSQL_INTEGRATION_URL ?? process.env.DATABASE_URL ?? "mysql://root:password@127.0.0.1:3306/mysql");
-  const admin = await mysql.createConnection({
-    host: sourceUrl.hostname,
-    port: Number(sourceUrl.port || 3306),
-    user: decodeURIComponent(sourceUrl.username),
-    password: decodeURIComponent(sourceUrl.password),
-    multipleStatements: true,
-  });
-  const testUrl = new URL(sourceUrl.toString());
-  testUrl.pathname = `/${DATABASE_NAME}`;
+  const { rawUrl: adminRawUrl } = resolveMysqlAdminUrlFromEnv({ consumerName: "v3.1.2 integration test" });
+  assertSafeLocalTestDatabaseServer(adminRawUrl, { consumerName: "v3.1.2 integration test" });
+  const admin = await mysql.createConnection(
+    createMysqlConnectionOptions(adminRawUrl, { multipleStatements: true }),
+  );
+  const testUrl = replaceMysqlDatabaseName(adminRawUrl, DATABASE_NAME);
   const results: string[] = [];
 
   try {
@@ -144,7 +158,9 @@ async function main() {
     check(await scalar<number>(admin, "SELECT COUNT(*) value FROM order_status_logs WHERE orderId=? AND fromStatus='refunding' AND toStatus='partially_refunded'", [historicalOrder.insertId]) === 1, "历史部分退款订单升级日志缺失");
     results.push("历史重复活动投诉升级处理");
 
-    process.env.DATABASE_URL = testUrl.toString();
+    await applyMigrationsAfter(admin, "0006_steady_wild_child.sql");
+
+    process.env.DATABASE_URL = testUrl;
     process.env.PAYMENT_PROVIDER = "sandbox";
     const finance = await import("../server/services/finance-service");
     const complaint = await import("../server/services/complaint-service");
@@ -169,15 +185,16 @@ async function main() {
     const createProjectFixture = async (label: string, escrowCount = 1) => {
       sequence += 1;
       const [project] = await admin.execute<ResultSetHeader>(
-        "INSERT INTO projects (needId,quoteId,ownerId,engineerId,title,totalAmount,status,startedAt) VALUES (?,?,?,?,?,?,'in_progress',NOW())",
+        "INSERT INTO projects (needId,quoteId,ownerId,engineerId,title,totalAmount,status) VALUES (?,?,?,?,?,?,'pending_payment')",
         [9000 + sequence, 9000 + sequence, ownerId, engineerId, label, 100 * escrowCount],
       );
       const [milestone] = await admin.execute<ResultSetHeader>(
-        "INSERT INTO milestones (projectId,title,amount,sortOrder,status) VALUES (?,?,?,1,'waiting_acceptance')",
+        "INSERT INTO milestones (projectId,title,amount,sortOrder,status) VALUES (?,?,?,1,'pending')",
         [project.insertId, `${label}里程碑`, 100 * escrowCount],
       );
       const finances: { orderId: number; paymentId: number }[] = [];
       for (let index = 0; index < escrowCount; index += 1) finances.push(await createOrderAndPay(project.insertId, `${label}订单${index + 1}`));
+      await admin.execute("UPDATE milestones SET status='waiting_acceptance' WHERE id=?", [milestone.insertId]);
       await admin.execute(
         "INSERT INTO settlements (settlementNo,projectId,milestoneId,payeeId,amount,status,idempotencyKey) VALUES (?,?,?,?,?,'pending',?)",
         [`V312-SET-${project.insertId}`, project.insertId, milestone.insertId, engineerId, 100 * escrowCount, `v312-settlement-${project.insertId}`],

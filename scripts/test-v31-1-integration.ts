@@ -1,7 +1,14 @@
 import "dotenv/config";
 import path from "node:path";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import mysql, { type ResultSetHeader, type RowDataPacket } from "mysql2/promise";
+
+import {
+  assertSafeLocalTestDatabaseServer,
+  createMysqlConnectionOptions,
+  replaceMysqlDatabaseName,
+  resolveMysqlAdminUrlFromEnv,
+} from "./lib/mysql-test-config.mjs";
 import type { PaymentProvider, ProviderPaymentRequest, ProviderPaymentResult, ProviderRefundRequest, ProviderRefundResult } from "../server/payments/provider";
 
 const DATABASE_NAME = "shenghuobang_v311_integration";
@@ -33,17 +40,24 @@ async function scalar<T>(connection: mysql.Connection, query: string, params: un
   return rows[0]?.value;
 }
 
+async function applyMigrationsAfter(connection: mysql.Connection, afterPrefix: string) {
+  const files = (await readdir(path.resolve(process.cwd(), "drizzle")))
+    .filter((file) => /^\d{4}_.+\.sql$/.test(file))
+    .sort()
+    .filter((file) => file > afterPrefix);
+  for (const file of files) {
+    const sql = (await readFile(path.resolve(process.cwd(), "drizzle", file), "utf8")).replaceAll("--> statement-breakpoint", "");
+    await connection.query(sql);
+  }
+}
+
 async function main() {
-  const sourceUrl = new URL(process.env.MYSQL_INTEGRATION_URL ?? process.env.DATABASE_URL ?? "mysql://root:password@127.0.0.1:3306/mysql");
-  const admin = await mysql.createConnection({
-    host: sourceUrl.hostname,
-    port: Number(sourceUrl.port || 3306),
-    user: decodeURIComponent(sourceUrl.username),
-    password: decodeURIComponent(sourceUrl.password),
-    multipleStatements: true,
-  });
-  const testUrl = new URL(sourceUrl.toString());
-  testUrl.pathname = `/${DATABASE_NAME}`;
+  const { rawUrl: adminRawUrl } = resolveMysqlAdminUrlFromEnv({ consumerName: "v3.1.1 integration test" });
+  assertSafeLocalTestDatabaseServer(adminRawUrl, { consumerName: "v3.1.1 integration test" });
+  const admin = await mysql.createConnection(
+    createMysqlConnectionOptions(adminRawUrl, { multipleStatements: true }),
+  );
+  const testUrl = replaceMysqlDatabaseName(adminRawUrl, DATABASE_NAME);
   const results: string[] = [];
 
   try {
@@ -61,8 +75,9 @@ async function main() {
       const sql = (await readFile(path.resolve(process.cwd(), "drizzle", file), "utf8")).replaceAll("--> statement-breakpoint", "");
       await admin.query(sql);
     }
+    await applyMigrationsAfter(admin, "0006_steady_wild_child.sql");
 
-    process.env.DATABASE_URL = testUrl.toString();
+    process.env.DATABASE_URL = testUrl;
     process.env.PAYMENT_PROVIDER = "sandbox";
     const finance = await import("../server/services/finance-service");
     const complaint = await import("../server/services/complaint-service");
@@ -159,17 +174,18 @@ async function main() {
 
     // Project fixture with paid escrow, milestone and settlement.
     const [projectResult] = await admin.execute<ResultSetHeader>(
-      "INSERT INTO projects (needId,quoteId,ownerId,engineerId,title,totalAmount,status,startedAt) VALUES (?,?,?,?,?,?,'in_progress',NOW())",
+      "INSERT INTO projects (needId,quoteId,ownerId,engineerId,title,totalAmount,status) VALUES (?,?,?,?,?,?,'pending_payment')",
       [9001, 9001, buyerId, sellerId, "投诉集成项目", 100],
     );
     const projectId = projectResult.insertId;
     const [milestoneResult] = await admin.execute<ResultSetHeader>(
-      "INSERT INTO milestones (projectId,title,amount,sortOrder,status) VALUES (?,?,100,1,'waiting_acceptance')",
+      "INSERT INTO milestones (projectId,title,amount,sortOrder,status) VALUES (?,?,100,1,'pending')",
       [projectId, "投诉里程碑"],
     );
     const milestoneId = milestoneResult.insertId;
     const projectOrderId = await createOrder("投诉项目订单", 100, "project", projectId);
     await createAndPay(projectOrderId, "complaint-payment");
+    await admin.execute("UPDATE milestones SET status='waiting_acceptance' WHERE id=?", [milestoneId]);
     await admin.execute(
       "INSERT INTO settlements (settlementNo,projectId,milestoneId,payeeId,amount,status,idempotencyKey) VALUES (?,?,?,?,100,'pending',?)",
       [`SET-INTEGRATION-${projectId}`, projectId, milestoneId, sellerId, `settlement-integration-${projectId}`],

@@ -218,6 +218,20 @@
       "when": 1784454286992,
       "tag": "0030_v33_b1_ideas_collaboration",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "5",
+      "when": 1784523962434,
+      "tag": "0031_v33_b2_design_prototype",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "5",
+      "when": 1784523962435,
+      "tag": "0032_v33_b3_acceptance_intent",
+      "breakpoints": true
     }
   ]
 }

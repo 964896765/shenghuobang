@@ -44,9 +44,9 @@ ALTER TABLE `business_identities` ADD CONSTRAINT `business_identities_accountId_
 ALTER TABLE `business_identities` ADD CONSTRAINT `business_identities_identityTypeId_identity_types_id_fk` FOREIGN KEY (`identityTypeId`) REFERENCES `identity_types`(`id`) ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE `business_identities` ADD CONSTRAINT `business_identities_createdBy_users_id_fk` FOREIGN KEY (`createdBy`) REFERENCES `users`(`id`) ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE `business_identities` ADD CONSTRAINT `business_identities_suspendedBy_users_id_fk` FOREIGN KEY (`suspendedBy`) REFERENCES `users`(`id`) ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE `business_identities` ADD CONSTRAINT `business_identities_migrationRunId_migration_runs_migrationRunId_fk` FOREIGN KEY (`migrationRunId`) REFERENCES `migration_runs`(`migrationRunId`) ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE `business_identities` ADD CONSTRAINT `business_identities_run_fk` FOREIGN KEY (`migrationRunId`) REFERENCES `migration_runs`(`migrationRunId`) ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE `identity_profiles` ADD CONSTRAINT `identity_profiles_identityId_business_identities_id_fk` FOREIGN KEY (`identityId`) REFERENCES `business_identities`(`id`) ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE `identity_profiles` ADD CONSTRAINT `identity_profiles_migrationRunId_migration_runs_migrationRunId_fk` FOREIGN KEY (`migrationRunId`) REFERENCES `migration_runs`(`migrationRunId`) ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE `identity_profiles` ADD CONSTRAINT `identity_profiles_run_fk` FOREIGN KEY (`migrationRunId`) REFERENCES `migration_runs`(`migrationRunId`) ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX `business_identities_account_status_idx` ON `business_identities` (`accountId`,`status`);--> statement-breakpoint
 CREATE INDEX `business_identities_type_status_idx` ON `business_identities` (`identityTypeId`,`status`);--> statement-breakpoint
 CREATE INDEX `business_identities_migration_run_idx` ON `business_identities` (`migrationRunId`);--> statement-breakpoint

@@ -82,6 +82,16 @@ assert.equal(
     .databaseName,
   "v33a2_empty",
 );
+assert.equal(
+  assertSafeA2DatabaseUrl("mysql://tester:secret@127.0.0.1:3307/shenghuobang_v33_rc1")
+    .databaseName,
+  "shenghuobang_v33_rc1",
+);
+assert.equal(
+  assertSafeA2DatabaseUrl("mysql://tester:secret@mysql:3306/shenghuobang_v33_rc1_restore")
+    .databaseName,
+  "shenghuobang_v33_rc1_restore",
+);
 for (const unsafeUrl of [
   undefined,
   "mysql://tester:secret@127.0.0.1:3306/",
@@ -89,6 +99,7 @@ for (const unsafeUrl of [
   "mysql://tester:secret@127.0.0.1:3306/prod",
   "mysql://tester:secret@127.0.0.1:3306/main",
   "mysql://tester:secret@127.0.0.1:3306/shenghuobang",
+  "mysql://tester:secret@127.0.0.1:3306/shenghuobang_live_test",
   "mysql://tester:secret@prod.example.com:3306/test_v33a2",
 ]) {
   assert.throws(() => assertSafeA2DatabaseUrl(unsafeUrl));

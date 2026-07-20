@@ -21,11 +21,16 @@ const snapshot = JSON.parse(snapshotRaw);
 const sqlFiles = (await readdir(path.join(root, "drizzle")))
   .filter((file) => /^\d{4}_.+\.sql$/.test(file))
   .sort();
+const journalEntries = Array.isArray(journal.entries) ? journal.entries : [];
+const journalTags = journalEntries.map((entry) => entry.tag);
+const sqlTags = sqlFiles.map((file) => file.replace(/\.sql$/, ""));
 const a22Files = sqlFiles.filter((file) => /^00(?:2[1-9])_/.test(file));
 const a22SqlByFile = Object.fromEntries(
   await Promise.all(a22Files.map(async (file) => [file, await read(`drizzle/${file}`)])),
 );
 const a22Sql = Object.values(a22SqlByFile).join("\n");
+const schemaTableCount = (schema.match(/mysqlTable\(/g) ?? []).length;
+const snapshotTableCount = Object.keys(snapshot.tables).length;
 
 const businessTables = [
   "identity_types",
@@ -57,8 +62,8 @@ const a22NewTables = businessTables.filter(
   (table) => !["identity_types", "certification_types", "capabilities", "project_roles"].includes(table),
 );
 
-check(Object.keys(snapshot.tables).length === 95, `Expected 95 tables, found ${Object.keys(snapshot.tables).length}`);
-check((schema.match(/mysqlTable\(/g) ?? []).length === 95, "Schema must define 95 mysqlTable objects");
+check(snapshotTableCount === 95, `Expected 95 tables in 0029 snapshot, found ${snapshotTableCount}`);
+check(schemaTableCount >= snapshotTableCount, `Schema must retain at least ${snapshotTableCount} mysqlTable objects; found ${schemaTableCount}`);
 check(businessTables.length === 24, "Frozen business-table list must contain 24 entries");
 check(a22NewTables.length === 20, "A2.2 must add 20 business tables");
 for (const table of businessTables) {
@@ -169,11 +174,16 @@ check(
   "submittedBy must not map to reviewerProjectMembershipId",
 );
 
-check(journal.entries.length === 30, `Expected 30 journal entries, found ${journal.entries.length}`);
-for (let index = 0; index < journal.entries.length; index += 1) {
-  check(journal.entries[index].idx === index, `Journal idx ${index} is not continuous`);
-  check(`${journal.entries[index].tag}.sql` === sqlFiles[index], `Journal/file mismatch at ${index}`);
+check(journalEntries.length === sqlFiles.length, `Journal/file count mismatch: journal=${journalEntries.length} sql=${sqlFiles.length}`);
+check(new Set(journalTags).size === journalTags.length, "Journal contains duplicate migration tags");
+for (let index = 0; index < journalEntries.length; index += 1) {
+  check(journalEntries[index].idx === index, `Journal idx ${index} is not continuous`);
+  check(journalTags[index] === sqlTags[index], `Journal/file mismatch at ${index}: ${journalTags[index]} !== ${sqlTags[index]}`);
 }
+const orphanSqlTags = sqlTags.filter((tag) => !journalTags.includes(tag));
+const orphanJournalTags = journalTags.filter((tag) => !sqlTags.includes(tag));
+check(orphanSqlTags.length === 0, `SQL files missing from journal: ${orphanSqlTags.join(", ")}`);
+check(orphanJournalTags.length === 0, `Journal entries missing SQL files: ${orphanJournalTags.join(", ")}`);
 
 const baselineRows = [...baselineReport.matchAll(
   /\| `(00(?:0\d|1[0-4])_[^`]+\.sql)` \| (\d+) \| `([0-9a-f]{64})` \|/g,
@@ -191,6 +201,6 @@ if (failures.length > 0) {
   process.exitCode = 1;
 } else {
   console.log("V3.3-A A2.2 business schema: PASS");
-  console.log("tables=95 business=24 a22New=20 existingAdditive=6 compositeFK=13");
-  console.log("migrations=0021..0029 journal=30 historicalMigrationsUnchanged=true");
+  console.log(`tables=snapshot:${snapshotTableCount},schema:${schemaTableCount} business=24 a22New=20 existingAdditive=6 compositeFK=13`);
+  console.log(`migrations=0021..0029 journal=${journalEntries.length} historicalMigrationsUnchanged=true`);
 }

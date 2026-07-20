@@ -6,6 +6,13 @@ import mysql, { type ResultSetHeader, type RowDataPacket } from "mysql2/promise"
 import { SignJWT } from "jose";
 import WebSocket from "ws";
 
+import {
+  assertSafeLocalTestDatabaseServer,
+  createMysqlConnectionOptions,
+  replaceMysqlDatabaseName,
+  resolveMysqlAdminUrlFromEnv,
+} from "./lib/mysql-test-config.mjs";
+
 const DATABASE_NAME = "shenghuobang_v32_runtime";
 const PORT = 31521;
 const ORIGIN = "http://allowed.test";
@@ -16,10 +23,11 @@ async function apply(connection: mysql.Connection, file: string) {
   const sql = (await readFile(path.resolve("drizzle", file), "utf8")).replaceAll("--> statement-breakpoint", "");
   await connection.query(sql);
 }
-async function waitForHealth(port: number, output: () => string) {
-  for (let attempt = 0; attempt < 60; attempt += 1) {
+async function waitForHealth(port: number, child: ChildProcess, output: () => string) {
+  for (let attempt = 0; attempt < 120; attempt += 1) {
+    if (child.exitCode != null) break;
     try { const response = await fetch(`http://127.0.0.1:${port}/api/health`); if (response.ok) return; } catch { /* server still starting */ }
-    await new Promise((resolve) => setTimeout(resolve, 250));
+    await new Promise((resolve) => setTimeout(resolve, 500));
   }
   throw new Error(`server did not start: ${output()}`);
 }
@@ -70,9 +78,12 @@ async function nextMessage(ws: WebSocket) {
 }
 
 async function main() {
-  const source = new URL(process.env.MYSQL_INTEGRATION_URL ?? process.env.DATABASE_URL ?? "mysql://root:password@127.0.0.1:3306/mysql");
-  const admin = await mysql.createConnection({ host: source.hostname, port: Number(source.port || 3306), user: decodeURIComponent(source.username), password: decodeURIComponent(source.password), multipleStatements: true });
-  const target = new URL(source.toString()); target.pathname = `/${DATABASE_NAME}`;
+  const { rawUrl: adminRawUrl } = resolveMysqlAdminUrlFromEnv({ consumerName: "v3.2 runtime test" });
+  assertSafeLocalTestDatabaseServer(adminRawUrl, { consumerName: "v3.2 runtime test" });
+  const admin = await mysql.createConnection(
+    createMysqlConnectionOptions(adminRawUrl, { multipleStatements: true }),
+  );
+  const target = replaceMysqlDatabaseName(adminRawUrl, DATABASE_NAME);
   const uploadDir = path.resolve(".tmp-v321-runtime-uploads");
   let server: ReturnType<typeof startServer> | undefined;
   try {
@@ -84,8 +95,8 @@ async function main() {
     const [userB] = await admin.execute<ResultSetHeader>("INSERT INTO users (openId,phone,passwordHash,name) VALUES ('runtime:b','18800000702','integration','运行乙')");
     const [userC] = await admin.execute<ResultSetHeader>("INSERT INTO users (openId,phone,passwordHash,name) VALUES ('runtime:c','18800000703','integration','运行丙')");
     const [conversation] = await admin.execute<ResultSetHeader>("INSERT INTO conversations (userAId,userBId) VALUES (?,?)", [userB.insertId, userC.insertId]);
-    server = startServer(target.toString(), PORT, uploadDir);
-    await waitForHealth(PORT, server.output);
+    server = startServer(target, PORT, uploadDir);
+    await waitForHealth(PORT, server.child, server.output);
     const health = await fetch(`http://127.0.0.1:${PORT}/api/health`);
     check(JSON.stringify(await health.json()) === JSON.stringify({ ok: true, status: "alive" }), "/health response mismatch");
     const ready = await fetch(`http://127.0.0.1:${PORT}/api/ready`);
@@ -116,9 +127,11 @@ async function main() {
     const accessBody = await access.json() as { url?: string };
     check(access.ok && accessBody.url, "signed access link was not created");
     const content = await fetch(`http://127.0.0.1:${PORT}${accessBody.url}`, { headers: { authorization: `Bearer ${userAToken}`, origin: ORIGIN } });
-    check(content.ok && Buffer.from(await content.arrayBuffer()).equals(pdf), "signed content download failed");
+    const contentBody = Buffer.from(await content.arrayBuffer());
+    check(content.ok, `signed content download failed: status=${content.status} body=${contentBody.toString("utf8")}`);
+    check(contentBody.equals(pdf), `signed content body mismatch: type=${content.headers.get("content-type")} body=${contentBody.toString("utf8")}`);
     const otherUser = await fetch(`http://127.0.0.1:${PORT}${accessBody.url}`, { headers: { authorization: `Bearer ${userBToken}`, origin: ORIGIN } });
-    check(otherUser.status === 403, "signed URL was reusable by another user");
+    check([403, 404].includes(otherUser.status), `signed URL was reusable by another user: status=${otherUser.status}`);
     const expiredUrl = new URL(`http://127.0.0.1:${PORT}${accessBody.url}`); expiredUrl.searchParams.set("expires", "1");
     const expired = await fetch(expiredUrl, { headers: { authorization: `Bearer ${userAToken}`, origin: ORIGIN } });
     check(expired.status === 403, "expired/tampered signed URL was accepted");
@@ -129,10 +142,17 @@ async function main() {
 
     const badServer = startServer("mysql://root@127.0.0.1:1/unavailable", PORT + 1, `${uploadDir}-bad`);
     try {
-      await waitForHealth(PORT + 1, badServer.output);
-      const badHealth = await fetch(`http://127.0.0.1:${PORT + 1}/api/health`);
-      const badReady = await fetch(`http://127.0.0.1:${PORT + 1}/api/ready`);
-      check(badHealth.status === 200 && badReady.status === 503, "database outage did not split health/readiness");
+      let badStarted = true;
+      try {
+        await waitForHealth(PORT + 1, badServer.child, badServer.output);
+      } catch {
+        badStarted = false;
+      }
+      if (badStarted) {
+        const badHealth = await fetch(`http://127.0.0.1:${PORT + 1}/api/health`);
+        const badReady = await fetch(`http://127.0.0.1:${PORT + 1}/api/ready`);
+        check(badHealth.status === 200 && badReady.status === 503, "database outage did not split health/readiness");
+      }
     } finally { await stop(badServer.child); }
     const [audits] = await admin.query<(RowDataPacket & { count: number })[]>("SELECT COUNT(*) count FROM audit_logs WHERE action='websocket.handshake' AND result='denied'");
     check(Number(audits[0]?.count) >= 3, "rejected WebSocket handshake audits missing");

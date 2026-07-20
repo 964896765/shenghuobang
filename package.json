@@ -42,6 +42,7 @@
     "test:v33-a2-infrastructure": "node scripts/test-v33-a2-infrastructure.mjs",
     "test:v33-a2-seeds": "node scripts/test-v33-a2-seeds.mjs",
     "test:v33-a2-empty-db": "node scripts/test-v33-a2-empty-db.mjs",
+    "test:v33-rc11:mysql-remediation": "node scripts/test-v33-rc11-mysql-remediation.mjs",
     "seed:v33-a2-directories": "node scripts/seed-v33-a2-directories.mjs",
     "check:v33-a2-business-schema": "node scripts/check-v33-a2-business-schema.mjs",
     "migrate:v33-a2-backfill": "tsx scripts/run-v33-a2-backfill.ts",
