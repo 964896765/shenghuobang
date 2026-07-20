@@ -137,3 +137,111 @@
 - 以管理员权限临时放行开发机私有网络 TCP `3000` / `8081`，或由用户手动完成等价放行
 - 重新验证真机对 `http://192.168.147.92:3000` 与 `exp://192.168.147.92:8081` 的可达性
 - 在 LAN 链路打通后，重新执行 RC1.2 的 75 项业务链路、Android 行为测试、安全验证与自动化回归
+
+## RC1.2 USB Reverse 复测
+- 复测基线：
+  - 分支：`codex/v3.3-rc1-validation`
+  - HEAD：`1fe749a561fd4eb133d8816cbb97394cd7d8c4b3`
+  - 工作区：Git 干净；`artifacts/v3.3-rc1/android/` 未被 Git 跟踪
+  - 数据库：`shenghuobang_v33_rc1`
+  - MySQL：`8.0.45`
+- `adb reverse`：
+  - `adb reverse --remove-all`
+  - `adb reverse tcp:3000 tcp:3000`
+  - `adb reverse tcp:8081 tcp:8081`
+  - `adb reverse --list` 结果：
+    - `UsbFfs tcp:3000 tcp:3000`
+    - `UsbFfs tcp:8081 tcp:8081`
+- API 地址切换：
+  - 本地未跟踪 `.env.local` 已从 `http://192.168.147.92:3000`
+  - 切换为 `http://127.0.0.1:3000`
+  - WebSocket 同步切换为 `ws://127.0.0.1:3000`
+
+### 后端结果
+- 结果：`PASS`
+- 启动方式：真实后端 + RC1 隔离数据库
+- `http://127.0.0.1:3000/api/health`：`PASS`
+- `http://127.0.0.1:3000/api/ready`：`PASS`
+- 启动日志：`server.listening`，端口 `3000`，未输出数据库密码、token 或 `storageKey`
+
+### Metro 与当前 V3.3 Bundle
+- 结果：`BLOCKED`
+- 尝试 1：
+  - `pnpm exec expo start --dev-client --localhost --port 8081 --clear`
+  - 使用 `exp+shenghuobang://expo-development-client/?url=http://127.0.0.1:8081`
+  - 现有 `com.shenghuobang.app` 被 brought to front，但未出现当前 bundle 附着证据
+  - 页面仍停留在旧的“首页加载失败 / 无法连接生活帮服务”状态
+- 尝试 2：
+  - `pnpm exec expo start --go --localhost --port 8081 --clear`
+  - 使用 `exp://127.0.0.1:8081`
+  - Expo Go 进入错误页，并可查看到明确错误日志
+- 关键证据：
+  - Expo Go 错误：`Uncaught Error: java.io.IOException: Failed to download remote update`
+  - Metro 输出：
+    - `Networking has been disabled`
+    - `Skipping dependency validation in offline mode`
+    - `Waiting on http://localhost:8081`
+  - 主机本地探针：
+    - `http://127.0.0.1:8081/status`：`packager-status:running`
+    - `http://127.0.0.1:8081/index.bundle?platform=android&dev=true&minify=false`：`404`
+    - Expo Go manifest 风格请求：超时或 `404`
+- 结论：
+  - USB Reverse 已成功建立
+  - 但当前 RC1.2 的 V3.3 Metro bundle 仍无法通过 `127.0.0.1:8081` 正常提供给真机
+  - 这已命中本轮停止条件：`当前 V3.3 Metro bundle 无法加载`
+
+### 冒烟门禁
+- 1. `adb reverse --list` 显示 `3000/8081`：`PASS`
+- 2. 真机成功加载当前 Metro bundle：`BLOCKED`
+- 3. 首页不再显示“无法连接生活帮服务”：`BLOCKED`
+- 4. 登录接口能够到达真实后端：`BLOCKED`
+- 5. 后端日志出现来自当前真机流程的请求：`BLOCKED`
+- 6. App 能读取 `/api/health` 或等价启动数据：`BLOCKED`
+- 7. 当前 bundle 能打开 V3.3 页面：`BLOCKED`
+- 8. 无 `CLEARTEXT communication not permitted`：`PASS`
+- 9. 无 `Network request failed`：`BLOCKED`
+- 10. 无旧 bundle 缓存误加载：`BLOCKED`
+
+### 75 项复测结果
+- 结果：`BLOCKED`
+- 原因：冒烟门禁未通过，未进入可验证的当前 V3.3 bundle
+- 统计：
+  - 通过：`0`
+  - 失败：`0`
+  - 阻断：`75`
+
+### Android 行为结果
+- 结果：`BLOCKED`
+- 原因：当前 V3.3 bundle 未成功附着，无法对返回键、前后台切换、离线重试、文件打开后返回 App、长列表、403/404/409 等行为给出真实结论
+
+### MySQL 对账
+- 结果：`BLOCKED`
+- 原因：真机未形成可追踪的当前 V3.3 业务写入链路
+
+### 安全验证
+- 结果：`BLOCKED`
+- 已排除项：
+  - 未出现 `CLEARTEXT communication not permitted`
+  - 后端仍使用 RC1 隔离库，未连接生产或共享数据库
+- 未完成项：
+  - 客户端伪造字段、跨资源 token、撤权失效、private/NDA 枚举、意向可见性等真机安全验证
+
+### 修复项
+- 本轮未修改业务代码
+- 本轮仅做本地环境窄修：
+  - 建立 `adb reverse`
+  - 切换本地未跟踪 `.env.local` 到 `127.0.0.1`
+  - 用 `--localhost` 重启后端与 Metro
+
+### 自动化回归
+- 结果：`BLOCKED`
+- 原因：USB Reverse 后的冒烟门禁未通过，不满足继续执行全量回归的前置条件
+
+### 最终 PR / main / tag 结论
+- 是否允许创建 PR：`否`
+- 是否允许合并 main：`否`
+- 是否允许打 V3.3 标签：`否`
+- 最终阻断原因：
+  - `adb reverse` 已成功
+  - 但当前 V3.3 Metro bundle 仍无法被真机加载
+  - 因此 75 项 Android 验收、MySQL 对账和安全验证无法继续
