@@ -125,7 +125,7 @@
 - 未连接生产或共享数据库。
 
 ## Commit SHA
-- 待提交后补记。
+- `31650a9b7c92e1f48a23709d7be45a7ced60c936`
 
 ## 剩余环境验收项
 - MySQL 集成验证继续受 `BLOCKED_BY_ENVIRONMENT` 阻断。
