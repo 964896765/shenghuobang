@@ -9,7 +9,7 @@ import { EmptyState, ErrorState, LoadingView, SectionHeader } from "@/components
 import { NeedCard, EngineerCard, ListingCard } from "@/components/cards";
 import { useColors } from "@/hooks/use-colors";
 import { IconSymbol } from "@/components/ui/icon-symbol";
-import { ForegroundLocationCard } from "@/components/foreground-location-card";
+
 import { useForegroundLocation } from "@/hooks/use-foreground-location";
 
 const HOT_KEYWORDS = ["空调维修", "旧手机", "小程序开发", "家具回收", "水管漏水", "智能家居"];
@@ -61,7 +61,6 @@ export default function SearchScreen() {
           <Text className="text-primary font-medium text-[15px]">搜索</Text>
         </Pressable>
       </View>
-      <ForegroundLocationCard compact controller={location} />
 
       {!enabled ? (
         <View className="px-4 pt-3">

@@ -112,8 +112,9 @@ function ProfileInner() {
         ) : null}
       </View>
 
-      {/* 我的内容 */}
-      <View className="mx-4 bg-surface rounded-2xl border border-border mb-3">
+            {/* 我的内容 */}
+      <View className="mx-4 bg-surface rounded-2xl border border-border mb-3 overflow-hidden">
+        <Text className="text-sm font-bold text-foreground px-4 pt-4 pb-1">创意与项目</Text>
         <MenuRow icon="lightbulb.fill" label="我的创意" onPress={() => router.push("/ideas/mine" as any)} color="#7C3AED" />
         <View className="h-px bg-border mx-4" />
         <MenuRow icon="person.2.fill" label="协作邀请" onPress={() => router.push("/ideas/invitations" as any)} color="#7C3AED" />
@@ -122,8 +123,9 @@ function ProfileInner() {
         <View className="h-px bg-border mx-4" />
         <MenuRow icon="folder.fill" label="我的项目" onPress={() => router.push("/projects" as any)} color="#0D9488" />
         <View className="h-px bg-border mx-4" />
-        <MenuRow icon="bookmark.fill" label="我的项目意向" onPress={() => router.push("/projects/my-intentions" as any)} color="#2563EB" />
-        <View className="h-px bg-border mx-4" />
+                <MenuRow icon="bookmark.fill" label="我的项目意向" onPress={() => router.push("/projects/my-intentions" as any)} color="#2563EB" />
+        <View className="h-px bg-border" />
+        <Text className="text-sm font-bold text-foreground px-4 pt-4 pb-1">物品、交易与循环</Text>
         <MenuRow icon="cube.box.fill" label="我的物品档案" onPress={() => router.push("/my-items" as any)} color="#F97316" />
         <View className="h-px bg-border mx-4" />
         <MenuRow icon="tag.fill" label="我的发布" onPress={() => router.push("/my-listings" as any)} color="#F97316" />
@@ -135,8 +137,9 @@ function ProfileInner() {
         <MenuRow icon="arrow.3.trianglepath" label="我的回收询价" onPress={() => router.push("/my-recycling" as any)} color="#7C3AED" />
       </View>
 
-      {/* 服务与信用 */}
-      <View className="mx-4 bg-surface rounded-2xl border border-border mb-3">
+            {/* 服务与信用 */}
+      <View className="mx-4 bg-surface rounded-2xl border border-border mb-3 overflow-hidden">
+        <Text className="text-sm font-bold text-foreground px-4 pt-4 pb-1">身份、信用与支持</Text>
         <MenuRow icon="person.crop.circle.fill" label="身份与工作台" onPress={() => router.push("/workspaces" as any)} color="#2563EB" />
         <View className="h-px bg-border mx-4" />
         <MenuRow icon="person.3.fill" label="我的组织" onPress={() => router.push("/organizations" as any)} color="#7C3AED" />

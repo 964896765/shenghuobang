@@ -11,14 +11,16 @@ import { NeedCard, EngineerCard, ListingCard } from "@/components/cards";
 import { SectionHeader, EmptyState, ErrorState, StatusBadge, LoadingView } from "@/components/common";
 import { PROJECT_STATUS, RECYCLING_STATUS, formatTime } from "@/lib/labels";
 import { startLogin } from "@/constants/app";
+import { ForegroundLocationCard } from "@/components/foreground-location-card";
+import { useForegroundLocation } from "@/hooks/use-foreground-location";
 
 const QUICK_ENTRIES = [
+  { icon: "lightbulb.fill", label: "公开创意", route: "/discover?tab=ideas", color: "#7C3AED" },
   { icon: "doc.text.fill", label: "发布需求", route: "/needs/create", color: "#16A34A" },
   { icon: "wrench.fill", label: "找工程师", route: "/engineers", color: "#0D9488" },
-  { icon: "tag.fill", label: "旧物出售", route: "/listings/create", color: "#F97316" },
-  { icon: "arrow.3.trianglepath", label: "物品回收", route: "/recycling/create", color: "#2563EB" },
-  { icon: "gift.fill", label: "免费赠送", route: "/listings/create?mode=giveaway", color: "#DB2777" },
-  { icon: "square.grid.2x2.fill", label: "全部服务", route: "/publish-center", color: "#7C3AED" },
+  { icon: "tag.fill", label: "二手与赠送", route: "/discover?tab=listings", color: "#F97316" },
+  { icon: "arrow.3.trianglepath", label: "维修回收", route: "/recycling/create", color: "#2563EB" },
+  { icon: "square.grid.2x2.fill", label: "全部发布", route: "/publish-center", color: "#DB2777" },
 ] as const;
 
 const QUICK_QUESTIONS = ["空调不制冷了", "想开发一个小程序", "旧洗衣机想处理", "家里想装智能灯"];
@@ -27,7 +29,8 @@ function UserHome() {
   const router = useRouter();
   const colors = useColors();
   const { isAuthenticated, profile } = useRole();
-  const feed = trpc.home.feed.useQuery();
+  const location = useForegroundLocation();
+  const feed = trpc.home.feed.useQuery(location.queryInput);
 
   return (
     <ScrollView
@@ -38,7 +41,7 @@ function UserHome() {
       <View className="flex-row items-center px-4 pt-2 pb-3">
         <View className="flex-row items-center">
           <IconSymbol name="mappin.circle.fill" size={18} color={colors.primary} />
-          <Text className="text-sm font-medium text-foreground ml-1">{profile?.cityName ?? "北京"}</Text>
+          <Text className="text-sm font-medium text-foreground ml-1">{location.region ?? profile?.cityName ?? "选择地区"}</Text>
         </View>
         <Pressable
           onPress={() => router.push("/search" as any)}
@@ -54,6 +57,8 @@ function UserHome() {
           <IconSymbol name="bell.fill" size={22} color={colors.foreground} />
         </Pressable>
       </View>
+
+      <ForegroundLocationCard compact controller={location} />
 
       {/* AI 生活助手 */}
       <View className="mx-4 rounded-2xl bg-primary p-5">

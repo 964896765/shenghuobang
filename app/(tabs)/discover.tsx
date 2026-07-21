@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { FlatList, Pressable, RefreshControl, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 
@@ -6,12 +6,15 @@ import { ScreenContainer } from "@/components/screen-container";
 import { useRole } from "@/lib/role-context";
 import { trpc } from "@/lib/trpc";
 import { NeedCard, EngineerCard, ListingCard } from "@/components/cards";
+import { IdeaCard } from "@/components/idea-card";
 import { EmptyState, ErrorState, LoadingView, StatusBadge, AppTextInput } from "@/components/common";
 import { AuthGate } from "@/components/auth-gate";
 import { RECYCLING_STATUS, formatTime } from "@/lib/labels";
 import { USER_DISCOVER_TABS } from "@/lib/discover-tabs";
-import { ForegroundLocationCard } from "@/components/foreground-location-card";
+
 import { useForegroundLocation } from "@/hooks/use-foreground-location";
+import { asIdeaListItems } from "@/lib/idea-app";
+import { startLogin } from "@/constants/app";
 
 function TabBar({ tabs, active, onChange }: { tabs: readonly { key: string; label: string }[]; active: string; onChange: (k: string) => void }) {
   return (
@@ -29,10 +32,19 @@ function TabBar({ tabs, active, onChange }: { tabs: readonly { key: string; labe
 
 function UserDiscover() {
   const router = useRouter();
+  const { isAuthenticated } = useRole();
   const params = useLocalSearchParams<{ tab?: string }>();
   const [tab, setTab] = useState<string>(params.tab ?? "needs");
   const [keyword, setKeyword] = useState("");
   const location = useForegroundLocation();
+  const ideas = trpc.ideas.listPublic.useQuery({ limit: 20 }, { enabled: tab === "ideas" && isAuthenticated });
+  const ideaRows = useMemo(() => {
+    const rows = asIdeaListItems(ideas.data ?? []);
+    const normalized = keyword.trim().toLocaleLowerCase();
+    if (!normalized) return rows;
+    return rows.filter((item) => [item.title, item.summary, ...(item.tags ?? [])]
+      .some((value) => value?.toLocaleLowerCase().includes(normalized)));
+  }, [ideas.data, keyword]);
 
   const needs = trpc.needs.list.useQuery({ scope: "plaza", keyword: keyword || undefined, ...location.queryInput }, { enabled: tab === "needs" });
   const engineers = trpc.engineers.list.useQuery({ keyword: keyword || undefined, ...location.queryInput }, { enabled: tab === "engineers" });
@@ -42,21 +54,34 @@ function UserDiscover() {
   );
   const openRequests = trpc.recycling.openRequests.useQuery(location.queryInput, { enabled: tab === "recycling" });
 
-  const loading = needs.isLoading || engineers.isLoading || listings.isLoading || openRequests.isLoading;
-  const activeQuery = tab === "needs" ? needs : tab === "engineers" ? engineers : tab === "recycling" ? openRequests : listings;
+  const loading = ideas.isLoading || needs.isLoading || engineers.isLoading || listings.isLoading || openRequests.isLoading;
+  const activeQuery = tab === "ideas" ? ideas : tab === "needs" ? needs : tab === "engineers" ? engineers : tab === "recycling" ? openRequests : listings;
 
   return (
     <View className="flex-1">
       <View className="px-4 pt-2 pb-3">
-        <Text className="text-2xl font-bold text-foreground mb-3">发现</Text>
-        <AppTextInput placeholder="搜索需求、工程师或物品" value={keyword} onChangeText={setKeyword} />
+        <Text className="text-2xl font-bold text-foreground mb-1">发现</Text>
+        <Text className="text-sm text-muted mb-3">从真实需求与公开创意出发，发现可信的人、物品和循环服务。</Text>
+        <AppTextInput placeholder="搜索创意、需求、工程师或物品" value={keyword} onChangeText={setKeyword} />
       </View>
-      <ForegroundLocationCard compact controller={location} />
       <TabBar tabs={USER_DISCOVER_TABS} active={tab} onChange={setTab} />
       {loading ? (
         <LoadingView />
       ) : activeQuery.isError ? (
         <ErrorState title="加载失败" hint={activeQuery.error.message} onRetry={() => activeQuery.refetch()} />
+      ) : tab === "ideas" ? (
+        !isAuthenticated ? (
+          <EmptyState title="登录后发现创意" hint="公开创意仍需登录访问，平台会按授权规则返回可见字段。" actionTitle="登录" onAction={startLogin} />
+        ) : (
+          <FlatList
+            data={ideaRows}
+            keyExtractor={(item) => String(item.id)}
+            renderItem={({ item }) => <IdeaCard idea={item} />}
+            contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}
+            refreshControl={<RefreshControl refreshing={ideas.isRefetching} onRefresh={() => ideas.refetch()} />}
+            ListEmptyComponent={<EmptyState title="暂无匹配创意" hint={keyword ? "换一个关键词试试。" : "成为第一个发布公开创意的人。"} actionTitle="发布创意" onAction={() => router.push("/ideas/edit" as never)} />}
+          />
+        )
       ) : tab === "needs" ? (
         <FlatList
           data={needs.data ?? []}
@@ -130,7 +155,7 @@ function EngineerHall() {
         <Text className="text-2xl font-bold text-foreground mb-3">需求大厅</Text>
         <AppTextInput placeholder="搜索需求关键词" value={keyword} onChangeText={setKeyword} />
       </View>
-      <ForegroundLocationCard compact controller={location} />
+
       {needs.isLoading ? (
         <LoadingView />
       ) : needs.isError ? (
@@ -159,7 +184,7 @@ function MerchantInquiries() {
         <Text className="text-2xl font-bold text-foreground">附近询价</Text>
         <Text className="text-sm text-muted mt-1">用户发布的回收询价,提交报价争取订单</Text>
       </View>
-      <ForegroundLocationCard compact controller={location} />
+
       {openRequests.isLoading ? (
         <LoadingView />
       ) : openRequests.isError ? (
@@ -197,17 +222,11 @@ function MerchantInquiries() {
 }
 
 export default function DiscoverScreen() {
-  const router = useRouter();
   const { role, isAuthenticated } = useRole();
   return (
     <ScreenContainer>
       <View className="flex-1">
-        <Pressable onPress={() => router.push("/ideas" as never)} className="mx-4 mt-2 mb-1 bg-primary/10 border border-primary/20 rounded-2xl p-3">
-          <Text className="text-base font-bold text-primary">创意协作</Text>
-          <Text className="text-xs text-muted mt-1">发现创意，邀请设计师和工程师共同落地</Text>
-        </Pressable>
-        <View className="flex-1">
-          {role === "engineer" && isAuthenticated ? (
+        {role === "engineer" && isAuthenticated ? (
             <EngineerHall />
           ) : role === "merchant" && isAuthenticated ? (
             <AuthGate>
@@ -215,8 +234,7 @@ export default function DiscoverScreen() {
             </AuthGate>
           ) : (
             <UserDiscover />
-          )}
-        </View>
+        )}
       </View>
     </ScreenContainer>
   );

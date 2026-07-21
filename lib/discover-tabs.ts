@@ -1,4 +1,5 @@
 export const USER_DISCOVER_TABS = [
+  { key: "ideas", label: "创意", procedure: "ideas.listPublic" },
   { key: "needs", label: "需求", procedure: "needs.list" },
   { key: "engineers", label: "工程师", procedure: "engineers.list" },
   { key: "listings", label: "旧物", procedure: "listings.list" },

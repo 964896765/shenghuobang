@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/auth-gate";
 import { trpc } from "@/lib/trpc";
 import { EngineerCard } from "@/components/cards";
 import { AppTextInput, EmptyState, LoadingView } from "@/components/common";
-import { ForegroundLocationCard } from "@/components/foreground-location-card";
+
 import { useForegroundLocation } from "@/hooks/use-foreground-location";
 
 export default function EngineersScreen() {
@@ -20,7 +20,7 @@ export default function EngineersScreen() {
       <View className="px-4 pb-2">
         <AppTextInput placeholder="搜索姓名、职业或技能" value={keyword} onChangeText={setKeyword} />
       </View>
-      <ForegroundLocationCard compact controller={location} />
+
       {engineers.isLoading ? (
         <LoadingView />
       ) : (
