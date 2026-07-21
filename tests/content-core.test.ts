@@ -73,6 +73,21 @@ describe("V4 content persistence and API contracts", () => {
     expect(service).toContain('sourceType: post.sourceType === "platform_verified" ? post.sourceType : "ai_assisted"');
     expect(service).toContain("AI_CONFIRMATION_REQUIRED");
   });
+
+  it("keeps product facts separate while projecting related content into catalog and passport", () => {
+    const service = source("server/services/content-service.ts");
+    const productPage = source("app/products/[publicCode].tsx");
+    const passportPage = source("app/products/passport/[publicCode].tsx");
+    const sections = source("components/product-content-sections.tsx");
+    expect(service).toContain("async relatedProduct(");
+    expect(productPage).toContain('scope: "model"');
+    expect(passportPage).toContain('scope: "unit"');
+    expect(sections).toContain("官方内容");
+    expect(sections).toContain("用户测评");
+    expect(sections).toContain("使用教程");
+    expect(sections).toContain("维修案例");
+    expect(service).not.toContain("update(productPassportEvents)");
+  });
 });
 
 describe("content media policy", () => {

@@ -117,6 +117,9 @@ export const contentRouter = router({
     locationLabel: z.string().trim().min(1).max(100).optional(),
   }).strict().optional()).query(({ ctx, input }) => call(() => contentService.discover(input ?? {}, ctx.user?.id))),
 
+  relatedProduct: publicProcedure.input(z.object({ publicCode: z.string().trim().min(1).max(40), scope: z.enum(["model", "unit"]) }).strict())
+    .query(({ ctx, input }) => call(() => contentService.relatedProduct(input.publicCode, input.scope, ctx.user?.id))),
+
   mine: protectedProcedure.input(z.object({ status: status.optional(), cursor: positiveId.optional(), limit: z.number().int().min(1).max(50).default(20) }).strict().optional())
     .query(({ ctx, input }) => call(() => contentService.mine(ctx.user.id, input ?? {}))),
 

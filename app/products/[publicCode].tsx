@@ -4,6 +4,7 @@ import { Pressable, RefreshControl, ScrollView, Text, View } from "react-native"
 import { PageHeader } from "@/components/auth-gate";
 import { EmptyState, ErrorState, LoadingView, PrimaryButton, StatusBadge } from "@/components/common";
 import { ScreenContainer } from "@/components/screen-container";
+import { ProductContentSections } from "@/components/product-content-sections";
 import { formatProductDate, productErrorMessage } from "@/lib/product-app";
 import { trpc } from "@/lib/trpc";
 
@@ -19,6 +20,10 @@ export default function PublicProductDetailScreen() {
   const publicCode = Array.isArray(params.publicCode) ? params.publicCode[0] : params.publicCode;
   const detail = trpc.productModels.publicDetail.useQuery(
     { publicCode: publicCode ?? "" },
+    { enabled: Boolean(publicCode) },
+  );
+  const relatedContent = trpc.content.relatedProduct.useQuery(
+    { publicCode: publicCode ?? "", scope: "model" },
     { enabled: Boolean(publicCode) },
   );
 
@@ -115,6 +120,13 @@ export default function PublicProductDetailScreen() {
             <PrimaryButton title="查询单件产品护照" onPress={() => router.push("/products/passport" as never)} />
           </View>
         </View>
+
+        <ProductContentSections
+          data={relatedContent.data}
+          loading={relatedContent.isLoading}
+          error={relatedContent.error?.message}
+          onRetry={() => { void relatedContent.refetch(); }}
+        />
 
         <Text className="text-xs text-muted text-center mt-4">
           发布于 {formatProductDate(model.publishedAt)} · 最近更新 {formatProductDate(model.updatedAt)}

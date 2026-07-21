@@ -488,6 +488,45 @@ export class ContentService {
     }));
   }
 
+  async relatedProduct(publicCodeValue: string, scope: "model" | "unit", accountId?: number) {
+    const publicCode = requiredText(publicCodeValue, 40, "PRODUCT_PUBLIC_CODE_INVALID");
+    const db = await requireDb();
+    let relationFilters: ReturnType<typeof and>[] = [];
+    if (scope === "model") {
+      const models = await db.select({ id: productModels.id }).from(productModels).where(and(eq(productModels.publicCode, publicCode), eq(productModels.status, "active"), eq(productModels.visibility, "public"), isNull(productModels.deletedAt))).limit(1);
+      if (!models[0]) throw new ContentServiceError("PRODUCT_NOT_FOUND");
+      relationFilters = [and(eq(contentRelations.relationType, "product"), eq(contentRelations.relationId, models[0].id))!];
+    } else {
+      const units = await db.select({ id: productUnits.id, productModelId: productUnits.productModelId }).from(productUnits).where(and(eq(productUnits.publicCode, publicCode), eq(productUnits.passportVisibility, "public"))).limit(1);
+      if (!units[0]) throw new ContentServiceError("PRODUCT_UNIT_NOT_FOUND");
+      relationFilters = [
+        and(eq(contentRelations.relationType, "product_unit"), eq(contentRelations.relationId, units[0].id))!,
+        and(eq(contentRelations.relationType, "product"), eq(contentRelations.relationId, units[0].productModelId))!,
+      ];
+    }
+    const rows = await db.select({ post: contentPosts, metrics: contentMetrics, authorName: users.name, verificationLabel: creatorProfiles.verificationLabel })
+      .from(contentRelations).innerJoin(contentPosts, eq(contentRelations.postId, contentPosts.id)).innerJoin(users, eq(contentPosts.authorAccountId, users.id))
+      .leftJoin(contentMetrics, eq(contentPosts.id, contentMetrics.postId)).leftJoin(creatorProfiles, eq(contentPosts.authorAccountId, creatorProfiles.accountId))
+      .where(and(eq(contentPosts.status, "published"), eq(contentPosts.visibility, "public"), isNull(contentPosts.deletedAt), or(...relationFilters)))
+      .orderBy(desc(contentPosts.publishedAt)).limit(50);
+    if (!rows.length) return [];
+    const postIds = [...new Set(rows.map((row) => row.post.id))];
+    const [media, relations, tags, viewer] = await Promise.all([
+      db.select({ postId: contentMedia.postId, fileId: contentMedia.fileId, mediaType: contentMedia.mediaType, purpose: contentMedia.purpose, sortOrder: contentMedia.sortOrder }).from(contentMedia).where(and(inArray(contentMedia.postId, postIds), eq(contentMedia.status, "active"))).orderBy(contentMedia.sortOrder),
+      db.select({ postId: contentRelations.postId, relationType: contentRelations.relationType, relationId: contentRelations.relationId, relationLabel: contentRelations.relationLabel }).from(contentRelations).where(inArray(contentRelations.postId, postIds)),
+      db.select({ postId: contentTagLinks.postId, id: contentTags.id, name: contentTags.displayName }).from(contentTagLinks).innerJoin(contentTags, eq(contentTagLinks.tagId, contentTags.id)).where(inArray(contentTagLinks.postId, postIds)),
+      accountId ? db.select({ postId: contentInteractions.postId, type: contentInteractions.interactionType, active: contentInteractions.active }).from(contentInteractions).where(and(inArray(contentInteractions.postId, postIds), eq(contentInteractions.accountId, accountId), inArray(contentInteractions.interactionType, ["like", "favorite"]))) : Promise.resolve([]),
+    ]);
+    const linkedRelations = await Promise.all(relations.map(async (relation) => ({ ...relation, route: await relationRoute(relation.relationType, relation.relationId) })));
+    return rows.filter((row, index) => rows.findIndex((candidate) => candidate.post.id === row.post.id) === index).map((row) => ({
+      ...row,
+      media: media.filter((item) => item.postId === row.post.id),
+      relations: linkedRelations.filter((item) => item.postId === row.post.id),
+      tags: tags.filter((item) => item.postId === row.post.id),
+      viewer: { liked: viewer.some((item) => item.postId === row.post.id && item.type === "like" && item.active), favorited: viewer.some((item) => item.postId === row.post.id && item.type === "favorite" && item.active) },
+    }));
+  }
+
   async mine(accountId: number, input: { status?: ContentStatus; cursor?: number; limit?: number }) {
     const db = await requireDb();
     const filters = [eq(contentPosts.authorAccountId, accountId), isNull(contentPosts.deletedAt)];

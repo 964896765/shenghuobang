@@ -4,6 +4,7 @@ import { RefreshControl, ScrollView, Text, View } from "react-native";
 import { PageHeader } from "@/components/auth-gate";
 import { EmptyState, ErrorState, LoadingView, PrimaryButton, StatusBadge } from "@/components/common";
 import { ScreenContainer } from "@/components/screen-container";
+import { ProductContentSections } from "@/components/product-content-sections";
 import {
   describeProductEventDetail,
   formatProductDate,
@@ -30,6 +31,10 @@ export default function PublicProductPassportScreen() {
   const publicCode = Array.isArray(params.publicCode) ? params.publicCode[0] : params.publicCode;
   const passport = trpc.productUnits.publicPassport.useQuery(
     { publicCode: publicCode ?? "" },
+    { enabled: Boolean(publicCode) },
+  );
+  const relatedContent = trpc.content.relatedProduct.useQuery(
+    { publicCode: publicCode ?? "", scope: "unit" },
     { enabled: Boolean(publicCode) },
   );
 
@@ -126,6 +131,13 @@ export default function PublicProductPassportScreen() {
             </View>
           );
         })}
+
+        <ProductContentSections
+          data={relatedContent.data}
+          loading={relatedContent.isLoading}
+          error={relatedContent.error?.message}
+          onRetry={() => { void relatedContent.refetch(); }}
+        />
       </ScrollView>
     </ScreenContainer>
   );
