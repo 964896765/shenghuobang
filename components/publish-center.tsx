@@ -15,7 +15,7 @@ export function PublishCenter() {
       <EntryGrid entries={business} onPress={navigate} />
       <View className="mt-4 px-4">
         <SectionHeader title="内容创作" />
-        <Text className="-mt-2 mb-1 text-xs text-muted">灰色入口已接入统一建设中状态页，不会静默失败。</Text>
+        <Text className="-mt-2 mb-1 text-xs text-muted">九类入口共用同一创作流程，草稿、来源声明和关联对象均由服务端保存。</Text>
       </View>
       <EntryGrid entries={content} onPress={navigate} />
     </View>

@@ -113,7 +113,7 @@ describe("V4 新品筹措存储与安全合约", () => {
 describe("V4 新品筹措真实 App 闭环", () => {
   it("首页、发布和我的页面都进入统一筹措路由", () => {
     expect(HOME_ENTRIES.find((entry) => entry.id === "funding")?.route).toBe("/funding");
-    expect(PUBLISH_ENTRIES.find((entry) => entry.id === "funding-progress")?.route).toContain("筹措动态");
+    expect(PUBLISH_ENTRIES.find((entry) => entry.id === "funding-progress")?.route).toBe("/content/create?type=funding_update");
     expect(PROFILE_ENTRIES.find((entry) => entry.id === "funding")?.route).toBe("/funding/mine");
     expect(source("app/funding/index.tsx")).toContain("fundingCampaigns.publicList.useQuery");
   });

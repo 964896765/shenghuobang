@@ -26,11 +26,14 @@ describe("可运行雏形统一导航", () => {
     expect(root).toContain("<GlobalLocationProvider>");
     expect(home).toContain("<GlobalHeader />");
     expect(home).toContain("trpc.home.feed.useQuery(location.queryInput)");
-    for (const page of [discover, search, engineers]) {
+    for (const page of [search, engineers]) {
       expect(page).not.toContain("<LocationEntry");
       expect(page).toContain("useGlobalLocation()");
       expect(page).toContain("location.queryInput");
     }
+    expect(discover).not.toContain("<LocationEntry");
+    expect(discover).toContain("useGlobalLocation()");
+    expect(discover).toContain("location.region");
   });
 });
 
@@ -38,15 +41,15 @@ describe("可运行雏形统一入口", () => {
   it("创意进入固定发现频道并复用真实卡片", () => {
     const discover = source("app/(tabs)/discover.tsx");
     expect(DISCOVER_CHANNELS).toContainEqual({ id: "ideas", title: "创意" });
-    expect(discover).toContain("trpc.ideas.listPublic.useQuery");
-    expect(discover).toContain("<IdeaCard idea={item} />");
+    expect(discover).toContain("trpc.content.discover.useQuery");
+    expect(discover).toContain("<ContentCard item={item} />");
   });
 
   it("业务发布入口指向已有真实表单，未完成内容统一关闭", () => {
     expect(PUBLISH_ENTRIES.filter((entry) => entry.group === "business" && entry.enabled)).toHaveLength(7);
-    expect(PUBLISH_ENTRIES.filter((entry) => entry.group === "content").every((entry) => !entry.enabled)).toBe(true);
+    expect(PUBLISH_ENTRIES.filter((entry) => entry.group === "content" && entry.enabled)).toHaveLength(9);
     expect(PUBLISH_ENTRIES.find((entry) => entry.id === "idea")?.route).toBe("/ideas/edit");
-    expect(PUBLISH_ENTRIES.find((entry) => entry.id === "funding-progress")?.route).toContain("/coming-soon");
+    expect(PUBLISH_ENTRIES.find((entry) => entry.id === "funding-progress")?.route).toBe("/content/create?type=funding_update");
   });
 
   it("我的页由业务、创作者、可信资产和设置四组统一生成", () => {

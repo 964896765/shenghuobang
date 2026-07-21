@@ -228,6 +228,29 @@ async function validateRelation(accountId: number, relation: RelationInput): Pro
   throw new ContentServiceError("CONTENT_RELATION_TYPE_INVALID");
 }
 
+async function relationRoute(type: ContentRelationType, id: number): Promise<string | null> {
+  const db = await requireDb();
+  if (type === "product") {
+    const rows = await db.select({ publicCode: productModels.publicCode }).from(productModels).where(eq(productModels.id, id)).limit(1);
+    return rows[0] ? `/products/${rows[0].publicCode}` : null;
+  }
+  if (type === "product_unit") {
+    const rows = await db.select({ publicCode: productUnits.publicCode }).from(productUnits).where(eq(productUnits.id, id)).limit(1);
+    return rows[0] ? `/products/passport/${rows[0].publicCode}` : null;
+  }
+  if (type === "funding_project") {
+    const rows = await db.select({ publicCode: fundingCampaigns.publicCode }).from(fundingCampaigns).where(eq(fundingCampaigns.id, id)).limit(1);
+    return rows[0] ? `/funding/${rows[0].publicCode}` : null;
+  }
+  if (type === "idea") return `/ideas/${id}`;
+  if (type === "listing" || type === "donation") return `/listings/${id}`;
+  if (type === "demand" || type === "repair") return `/needs/${id}`;
+  if (type === "recycling") return `/recycling/${id}`;
+  if (type === "service") return `/engineers/${id}`;
+  if (type === "organization") return `/organizations/${id}`;
+  return null;
+}
+
 export class ContentService {
   async createDraft(accountId: number, input: DraftInput) {
     const rid = requestId(input.requestId);
@@ -381,6 +404,8 @@ export class ContentService {
     if (post.status !== "draft") throw new ContentServiceError("CONTENT_NOT_PUBLISHABLE");
     if (post.visibility === "private") throw new ContentServiceError("CONTENT_VISIBILITY_PRIVATE");
     if (!post.sourceStatement?.trim()) throw new ContentServiceError("CONTENT_SOURCE_REQUIRED");
+    if (post.sourceType === "organization_official" && !post.organizationId) throw new ContentServiceError("ORGANIZATION_CONTEXT_REQUIRED");
+    if (post.sourceType === "platform_verified") throw new ContentServiceError("PLATFORM_VERIFICATION_RESERVED");
     if (post.aiAssisted && !post.aiConfirmedAt) throw new ContentServiceError("AI_CONFIRMATION_REQUIRED");
     await validateIdentityContext(accountId, post.authorIdentityId, post.organizationId);
     const db = await requireDb();
@@ -391,6 +416,7 @@ export class ContentService {
     }
     const relations = await db.select().from(contentRelations).where(eq(contentRelations.postId, postId));
     for (const relation of relations) await validateRelation(accountId, { relationType: relation.relationType, relationId: relation.relationId, relationLabel: relation.relationLabel ?? undefined });
+    if (post.sourceType === "service_case" && !relations.some((relation) => ["service", "repair"].includes(relation.relationType))) throw new ContentServiceError("SERVICE_CASE_RELATION_REQUIRED");
     assertContentTransition("draft", "ready_to_publish");
     assertContentTransition("ready_to_publish", "reviewing");
     assertContentTransition("reviewing", "published");
@@ -417,7 +443,8 @@ export class ContentService {
       db.select({ id: users.id, name: users.name, verificationLabel: creatorProfiles.verificationLabel }).from(users).leftJoin(creatorProfiles, eq(users.id, creatorProfiles.accountId)).where(eq(users.id, post.authorAccountId)).limit(1),
       accountId ? db.select({ type: contentInteractions.interactionType, active: contentInteractions.active }).from(contentInteractions).where(and(eq(contentInteractions.postId, postId), eq(contentInteractions.accountId, accountId), inArray(contentInteractions.interactionType, ["like", "favorite"]))) : Promise.resolve([]),
     ]);
-    return { ...post, media, relations, tags, metrics: metrics[0], comments, author: author[0], viewer: { liked: viewer.some((v) => v.type === "like" && v.active), favorited: viewer.some((v) => v.type === "favorite" && v.active) } };
+    const linkedRelations = await Promise.all(relations.map(async (relation) => ({ ...relation, route: await relationRoute(relation.relationType, relation.relationId) })));
+    return { ...post, media, relations: linkedRelations, tags, metrics: metrics[0], comments, author: author[0], viewer: { liked: viewer.some((v) => v.type === "like" && v.active), favorited: viewer.some((v) => v.type === "favorite" && v.active) } };
   }
 
   async discover(input: { channel?: DiscoveryChannel; cursor?: number; limit?: number; locationLabel?: string }, accountId?: number) {
@@ -440,7 +467,25 @@ export class ContentService {
     const rows = await db.select({ post: contentPosts, metrics: contentMetrics, authorName: users.name, verificationLabel: creatorProfiles.verificationLabel })
       .from(contentPosts).innerJoin(users, eq(contentPosts.authorAccountId, users.id)).leftJoin(contentMetrics, eq(contentPosts.id, contentMetrics.postId)).leftJoin(creatorProfiles, eq(contentPosts.authorAccountId, creatorProfiles.accountId))
       .where(and(...filters)).orderBy(desc(contentPosts.publishedAt), desc(contentPosts.id)).limit(Math.min(input.limit ?? 20, 50));
-    return rows;
+    if (!rows.length) return [];
+    const postIds = rows.map((row) => row.post.id);
+    const [media, relations, tags, viewer] = await Promise.all([
+      db.select({ postId: contentMedia.postId, fileId: contentMedia.fileId, mediaType: contentMedia.mediaType, purpose: contentMedia.purpose, sortOrder: contentMedia.sortOrder }).from(contentMedia).where(and(inArray(contentMedia.postId, postIds), eq(contentMedia.status, "active"))).orderBy(contentMedia.sortOrder),
+      db.select({ postId: contentRelations.postId, relationType: contentRelations.relationType, relationId: contentRelations.relationId, relationLabel: contentRelations.relationLabel }).from(contentRelations).where(inArray(contentRelations.postId, postIds)),
+      db.select({ postId: contentTagLinks.postId, id: contentTags.id, name: contentTags.displayName }).from(contentTagLinks).innerJoin(contentTags, eq(contentTagLinks.tagId, contentTags.id)).where(inArray(contentTagLinks.postId, postIds)),
+      accountId ? db.select({ postId: contentInteractions.postId, type: contentInteractions.interactionType, active: contentInteractions.active }).from(contentInteractions).where(and(inArray(contentInteractions.postId, postIds), eq(contentInteractions.accountId, accountId), inArray(contentInteractions.interactionType, ["like", "favorite"]))) : Promise.resolve([]),
+    ]);
+    const linkedRelations = await Promise.all(relations.map(async (relation) => ({ ...relation, route: await relationRoute(relation.relationType, relation.relationId) })));
+    return rows.map((row) => ({
+      ...row,
+      media: media.filter((item) => item.postId === row.post.id),
+      relations: linkedRelations.filter((item) => item.postId === row.post.id),
+      tags: tags.filter((item) => item.postId === row.post.id),
+      viewer: {
+        liked: viewer.some((item) => item.postId === row.post.id && item.type === "like" && item.active),
+        favorited: viewer.some((item) => item.postId === row.post.id && item.type === "favorite" && item.active),
+      },
+    }));
   }
 
   async mine(accountId: number, input: { status?: ContentStatus; cursor?: number; limit?: number }) {
@@ -458,9 +503,36 @@ export class ContentService {
     return { profile: profiles[0] ?? null, draftCount: Number(drafts[0]?.count ?? 0), orderConversion: null, orderConversionStatus: "reserved_metric" as const };
   }
 
+  async myComments(accountId: number, limit = 50) {
+    const db = await requireDb();
+    return db.select({ id: contentComments.id, postId: contentComments.postId, postTitle: contentPosts.title, body: contentComments.body, status: contentComments.status, createdAt: contentComments.createdAt })
+      .from(contentComments).innerJoin(contentPosts, eq(contentComments.postId, contentPosts.id))
+      .where(eq(contentComments.authorAccountId, accountId)).orderBy(desc(contentComments.createdAt)).limit(Math.min(limit, 100));
+  }
+
+  async myFollows(accountId: number, direction: "following" | "followers", limit = 50) {
+    const db = await requireDb();
+    if (direction === "following") {
+      return db.select({ accountId: users.id, name: users.name, verificationLabel: creatorProfiles.verificationLabel, followedAt: contentFollows.createdAt })
+        .from(contentFollows).innerJoin(users, eq(contentFollows.followedAccountId, users.id)).leftJoin(creatorProfiles, eq(users.id, creatorProfiles.accountId))
+        .where(and(eq(contentFollows.followerAccountId, accountId), eq(contentFollows.active, true))).orderBy(desc(contentFollows.createdAt)).limit(Math.min(limit, 100));
+    }
+    return db.select({ accountId: users.id, name: users.name, verificationLabel: creatorProfiles.verificationLabel, followedAt: contentFollows.createdAt })
+      .from(contentFollows).innerJoin(users, eq(contentFollows.followerAccountId, users.id)).leftJoin(creatorProfiles, eq(users.id, creatorProfiles.accountId))
+      .where(and(eq(contentFollows.followedAccountId, accountId), eq(contentFollows.active, true))).orderBy(desc(contentFollows.createdAt)).limit(Math.min(limit, 100));
+  }
+
+  async myFavorites(accountId: number, limit = 50) {
+    const db = await requireDb();
+    return db.select({ id: contentPosts.id, title: contentPosts.title, contentType: contentPosts.contentType, authorName: users.name, favoritedAt: contentInteractions.updatedAt })
+      .from(contentInteractions).innerJoin(contentPosts, eq(contentInteractions.postId, contentPosts.id)).innerJoin(users, eq(contentPosts.authorAccountId, users.id))
+      .where(and(eq(contentInteractions.accountId, accountId), eq(contentInteractions.interactionType, "favorite"), eq(contentInteractions.active, true), eq(contentPosts.status, "published")))
+      .orderBy(desc(contentInteractions.updatedAt)).limit(Math.min(limit, 100));
+  }
+
   async setInteraction(accountId: number, postId: number, type: "like" | "favorite", active: boolean, ridValue: string) {
     const rid = requestId(ridValue);
-    await requireVisiblePost(postId, accountId);
+    const post = await requireVisiblePost(postId, accountId);
     const db = await requireDb();
     const duplicate = await db.select().from(contentInteractions).where(eq(contentInteractions.requestId, rid)).limit(1);
     if (duplicate[0]) return { active: duplicate[0].active, idempotent: true };
@@ -471,6 +543,8 @@ export class ContentService {
       if (changed) {
         const column = type === "like" ? contentMetrics.likeCount : contentMetrics.favoriteCount;
         await tx.update(contentMetrics).set({ [type === "like" ? "likeCount" : "favoriteCount"]: active ? sql`${column} + 1` : sql`greatest(${column} - 1, 0)` }).where(eq(contentMetrics.postId, postId));
+        const profileColumn = type === "like" ? creatorProfiles.totalLikeCount : creatorProfiles.totalFavoriteCount;
+        await tx.update(creatorProfiles).set({ [type === "like" ? "totalLikeCount" : "totalFavoriteCount"]: active ? sql`${profileColumn} + 1` : sql`greatest(${profileColumn} - 1, 0)` }).where(eq(creatorProfiles.accountId, post.authorAccountId));
       }
     });
     await audit(accountId, `content.${active ? "add" : "remove"}_${type}`, postId);
@@ -479,7 +553,7 @@ export class ContentService {
 
   async recordInteraction(accountId: number, postId: number, type: "view" | "share" | "product_click" | "listing_click" | "idea_click", ridValue: string) {
     const rid = requestId(ridValue);
-    await requireVisiblePost(postId, accountId);
+    const post = await requireVisiblePost(postId, accountId);
     const db = await requireDb();
     const duplicate = await db.select({ id: contentInteractions.id }).from(contentInteractions).where(eq(contentInteractions.requestId, rid)).limit(1);
     if (duplicate[0]) return { recorded: false, idempotent: true };
@@ -488,6 +562,11 @@ export class ContentService {
     await db.transaction(async (tx) => {
       await tx.insert(contentInteractions).values({ postId, accountId, interactionType: type, active: true, requestId: rid }).onDuplicateKeyUpdate({ set: { requestId: rid } });
       await tx.update(contentMetrics).set({ [metric]: sql`${column} + 1` }).where(eq(contentMetrics.postId, postId));
+      const profileMetric = { view: "totalViewCount", share: null, product_click: "productClickCount", listing_click: "listingClickCount", idea_click: "ideaClickCount" }[type] as "totalViewCount" | "productClickCount" | "listingClickCount" | "ideaClickCount" | null;
+      if (profileMetric) {
+        const profileColumn = creatorProfiles[profileMetric];
+        await tx.update(creatorProfiles).set({ [profileMetric]: sql`${profileColumn} + 1` }).where(eq(creatorProfiles.accountId, post.authorAccountId));
+      }
     });
     await audit(accountId, `content.record_${type}`, postId);
     return { recorded: true, idempotent: false };
@@ -507,6 +586,7 @@ export class ContentService {
     }
     const inserted = await db.insert(contentComments).values({ postId, authorAccountId: accountId, body, parentCommentId: parentCommentId ?? null, requestId: rid });
     await db.update(contentMetrics).set({ commentCount: sql`${contentMetrics.commentCount} + 1` }).where(eq(contentMetrics.postId, postId));
+    await db.update(creatorProfiles).set({ totalCommentCount: sql`${creatorProfiles.totalCommentCount} + 1` }).where(eq(creatorProfiles.accountId, post.authorAccountId));
     const rows = await db.select().from(contentComments).where(eq(contentComments.id, Number(inserted[0].insertId))).limit(1);
     await audit(accountId, "content.add_comment", postId, { commentId: rows[0]?.id });
     return rows[0];
@@ -523,6 +603,8 @@ export class ContentService {
     await db.transaction(async (tx) => {
       await tx.update(contentComments).set({ status: "author_deleted", deletedAt: new Date(), body: "" }).where(eq(contentComments.id, commentId));
       await tx.update(contentMetrics).set({ commentCount: sql`greatest(${contentMetrics.commentCount} - 1, 0)` }).where(eq(contentMetrics.postId, comment.postId));
+      const posts = await tx.select({ authorAccountId: contentPosts.authorAccountId }).from(contentPosts).where(eq(contentPosts.id, comment.postId)).limit(1);
+      if (posts[0]) await tx.update(creatorProfiles).set({ totalCommentCount: sql`greatest(${creatorProfiles.totalCommentCount} - 1, 0)` }).where(eq(creatorProfiles.accountId, posts[0].authorAccountId));
     });
     await audit(accountId, "content.delete_comment", comment.postId, { commentId });
     return { deleted: true, idempotent: false };

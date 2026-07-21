@@ -122,6 +122,15 @@ export const contentRouter = router({
 
   creatorDashboard: protectedProcedure.query(({ ctx }) => call(() => contentService.dashboard(ctx.user.id))),
 
+  myComments: protectedProcedure.input(z.object({ limit: z.number().int().min(1).max(100).default(50) }).strict().optional())
+    .query(({ ctx, input }) => call(() => contentService.myComments(ctx.user.id, input?.limit))),
+
+  myFollows: protectedProcedure.input(z.object({ direction: z.enum(["following", "followers"]), limit: z.number().int().min(1).max(100).default(50) }).strict())
+    .query(({ ctx, input }) => call(() => contentService.myFollows(ctx.user.id, input.direction, input.limit))),
+
+  myFavorites: protectedProcedure.input(z.object({ limit: z.number().int().min(1).max(100).default(50) }).strict().optional())
+    .query(({ ctx, input }) => call(() => contentService.myFavorites(ctx.user.id, input?.limit))),
+
   setLike: protectedProcedure.input(z.object({ postId: positiveId, active: z.boolean(), requestId }).strict())
     .mutation(({ ctx, input }) => call(() => contentService.setInteraction(ctx.user.id, input.postId, "like", input.active, input.requestId))),
 
