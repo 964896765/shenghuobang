@@ -232,6 +232,13 @@
       "when": 1784523962435,
       "tag": "0032_v33_b3_acceptance_intent",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "5",
+      "when": 1784640686472,
+      "tag": "0033_v4_product_core",
+      "breakpoints": true
     }
   ]
 }

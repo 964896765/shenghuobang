@@ -2535,3 +2535,129 @@ export const ideaNdaAcceptances = mysqlTable("idea_nda_acceptances",
   }),
 );
 export type IdeaNdaAcceptance = typeof ideaNdaAcceptances.$inferSelect;
+
+
+// ============ V4 高可信产品全生命周期核心 ============
+
+/** 产品型号：承载可复用的产品定义，不替代既有物品实例。 */
+export const productModels = mysqlTable("product_models",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    publicCode: varchar("publicCode", { length: 32 }).notNull(),
+    ownerAccountId: int("ownerAccountId").notNull().references(() => users.id),
+    ownerOrganizationId: int("ownerOrganizationId").references(() => organizations.id),
+    name: varchar("name", { length: 160 }).notNull(),
+    summary: varchar("summary", { length: 500 }).notNull(),
+    description: text("description"),
+    categoryCode: varchar("categoryCode", { length: 64 }).notNull(),
+    brandName: varchar("brandName", { length: 128 }),
+    modelCode: varchar("modelCode", { length: 128 }),
+    versionLabel: varchar("versionLabel", { length: 64 }).default("v1").notNull(),
+    specifications: json("specifications").$type<Record<string, unknown>>().notNull(),
+    visibility: mysqlEnum("visibility", ["public", "owner_only", "restricted"]).default("owner_only").notNull(),
+    status: mysqlEnum("status", ["draft", "active", "retired", "archived"]).default("draft").notNull(),
+    authorizationVersion: int("authorizationVersion").default(1).notNull(),
+    createdRequestId: varchar("createdRequestId", { length: 64 }).notNull(),
+    lastRequestId: varchar("lastRequestId", { length: 64 }).notNull(),
+    publishedAt: timestamp("publishedAt"),
+    retiredAt: timestamp("retiredAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+    deletedAt: timestamp("deletedAt"),
+  },
+  (table) => ({
+    publicCodeUnique: uniqueIndex("product_models_public_code_uq").on(table.publicCode),
+    createdRequestUnique: uniqueIndex("product_models_created_request_uq").on(table.createdRequestId),
+    lastRequestUnique: uniqueIndex("product_models_last_request_uq").on(table.lastRequestId),
+    ownerStatusIndex: index("product_models_owner_status_idx").on(table.ownerAccountId, table.status, table.deletedAt),
+    organizationStatusIndex: index("product_models_organization_status_idx").on(table.ownerOrganizationId, table.status, table.deletedAt),
+    publicFeedIndex: index("product_models_public_feed_idx").on(table.visibility, table.status, table.publishedAt),
+  }),
+);
+export type ProductModel = typeof productModels.$inferSelect;
+export type InsertProductModel = typeof productModels.$inferInsert;
+
+/** 产品来源关系：以多态来源连接需求、创意、项目或历史物品，避免向上游表重复加字段。 */
+export const productSourceLinks = mysqlTable("product_source_links",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    productModelId: int("productModelId").notNull().references(() => productModels.id),
+    sourceType: mysqlEnum("sourceType", ["need", "idea", "project", "legacy_item"]).notNull(),
+    sourceId: int("sourceId").notNull(),
+    relationType: mysqlEnum("relationType", ["derived_from", "validated_by", "produced_by", "migrated_from"]).default("derived_from").notNull(),
+    createdByAccountId: int("createdByAccountId").notNull().references(() => users.id),
+    requestId: varchar("requestId", { length: 64 }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    requestUnique: uniqueIndex("product_source_links_request_uq").on(table.requestId),
+    relationUnique: uniqueIndex("product_source_links_relation_uq").on(table.productModelId, table.sourceType, table.sourceId, table.relationType),
+    sourceIndex: index("product_source_links_source_idx").on(table.sourceType, table.sourceId),
+  }),
+);
+export type ProductSourceLink = typeof productSourceLinks.$inferSelect;
+
+/** 产品单元：为具体实物建立稳定身份，并可选关联既有 items 资产档案。 */
+export const productUnits = mysqlTable("product_units",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    productModelId: int("productModelId").notNull().references(() => productModels.id),
+    linkedItemId: int("linkedItemId").references(() => items.id),
+    currentOwnerAccountId: int("currentOwnerAccountId").references(() => users.id),
+    publicCode: varchar("publicCode", { length: 40 }).notNull(),
+    serialNumber: varchar("serialNumber", { length: 128 }),
+    batchCode: varchar("batchCode", { length: 96 }),
+    status: mysqlEnum("status", ["registered", "manufactured", "in_use", "idle", "listed", "under_service", "transferred", "recycling", "recycled", "retired"]).default("registered").notNull(),
+    trustLevel: mysqlEnum("trustLevel", ["self_declared", "verified", "certified"]).default("self_declared").notNull(),
+    passportVisibility: mysqlEnum("passportVisibility", ["public", "owner_only", "restricted"]).default("owner_only").notNull(),
+    authorizationVersion: int("authorizationVersion").default(1).notNull(),
+    createdRequestId: varchar("createdRequestId", { length: 64 }).notNull(),
+    lastRequestId: varchar("lastRequestId", { length: 64 }).notNull(),
+    manufacturedAt: timestamp("manufacturedAt"),
+    activatedAt: timestamp("activatedAt"),
+    retiredAt: timestamp("retiredAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({
+    publicCodeUnique: uniqueIndex("product_units_public_code_uq").on(table.publicCode),
+    createdRequestUnique: uniqueIndex("product_units_created_request_uq").on(table.createdRequestId),
+    lastRequestUnique: uniqueIndex("product_units_last_request_uq").on(table.lastRequestId),
+    linkedItemUnique: uniqueIndex("product_units_linked_item_uq").on(table.linkedItemId),
+    modelSerialUnique: uniqueIndex("product_units_model_serial_uq").on(table.productModelId, table.serialNumber),
+    modelStatusIndex: index("product_units_model_status_idx").on(table.productModelId, table.status),
+    ownerStatusIndex: index("product_units_owner_status_idx").on(table.currentOwnerAccountId, table.status),
+  }),
+);
+export type ProductUnit = typeof productUnits.$inferSelect;
+export type InsertProductUnit = typeof productUnits.$inferInsert;
+
+/** 产品护照事件：仅追加写入，以序号、请求幂等键和哈希链保留可验证历史。 */
+export const productPassportEvents = mysqlTable("product_passport_events",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    productUnitId: int("productUnitId").notNull().references(() => productUnits.id),
+    sequenceNumber: int("sequenceNumber").notNull(),
+    eventType: varchar("eventType", { length: 64 }).notNull(),
+    actorAccountId: int("actorAccountId").references(() => users.id),
+    actorOrganizationId: int("actorOrganizationId").references(() => organizations.id),
+    fromStatus: varchar("fromStatus", { length: 32 }),
+    toStatus: varchar("toStatus", { length: 32 }),
+    visibility: mysqlEnum("visibility", ["public", "owner", "internal"]).default("owner").notNull(),
+    sourceType: varchar("sourceType", { length: 64 }),
+    sourceId: varchar("sourceId", { length: 64 }),
+    requestId: varchar("requestId", { length: 64 }).notNull(),
+    detail: json("detail").$type<Record<string, unknown>>().notNull(),
+    previousEventHash: char("previousEventHash", { length: 64 }),
+    eventHash: char("eventHash", { length: 64 }).notNull(),
+    occurredAt: timestamp("occurredAt").notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    requestUnique: uniqueIndex("product_passport_events_request_uq").on(table.requestId),
+    unitSequenceUnique: uniqueIndex("product_passport_events_unit_sequence_uq").on(table.productUnitId, table.sequenceNumber),
+    unitTimelineIndex: index("product_passport_events_unit_timeline_idx").on(table.productUnitId, table.occurredAt),
+    sourceIndex: index("product_passport_events_source_idx").on(table.sourceType, table.sourceId),
+  }),
+);
+export type ProductPassportEvent = typeof productPassportEvents.$inferSelect;

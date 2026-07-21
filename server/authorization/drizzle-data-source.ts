@@ -31,6 +31,8 @@ import {
   projectMembershipRoles,
   projectMemberships,
   projectRoleCapabilities,
+  productModels,
+  productUnits,
   projects,
   quotes,
   refunds,
@@ -71,7 +73,9 @@ const RESOURCE_FIELDS: Record<string, string[]> = {
   settlement: ["id", "settlementNo", "amount", "frozenReason", "status"],
   stored_file: ["id", "originalName", "storageKey", "mimeType", "sizeBytes", "status"],
   idea: ["id", "creatorAccountId", "creatorIdentityId", "title", "summary", "description", "categoryCode", "tags", "visibility", "status", "coverFileId", "authorizationVersion", "publishedAt", "convertedProjectId", "createdAt", "updatedAt"],
-  idea_attachment: ["id", "ideaId", "fileId", "attachmentType", "confidentialityLevel", "sortOrder", "uploadedBy", "accessPolicyVersion", "originalName", "storageKey", "publicUrl", "permanentUrl", "mimeType", "sizeBytes", "status"],
+    idea_attachment: ["id", "ideaId", "fileId", "attachmentType", "confidentialityLevel", "sortOrder", "uploadedBy", "accessPolicyVersion", "originalName", "storageKey", "publicUrl", "permanentUrl", "mimeType", "sizeBytes", "status"],
+  product_model: ["id", "publicCode", "ownerAccountId", "ownerOrganizationId", "name", "summary", "description", "categoryCode", "brandName", "modelCode", "versionLabel", "specifications", "visibility", "status", "authorizationVersion", "publishedAt", "retiredAt", "createdAt", "updatedAt"],
+  product_unit: ["id", "productModelId", "linkedItemId", "currentOwnerAccountId", "publicCode", "serialNumber", "batchCode", "status", "trustLevel", "passportVisibility", "authorizationVersion", "manufacturedAt", "activatedAt", "retiredAt", "createdAt", "updatedAt"],
   audit_event: ["id", "resourceType", "reasonCode", "contextData", "ipAddress", "userAgent"],
 };
 
@@ -102,6 +106,20 @@ const ACCOUNT_SELF_CAPABILITIES = new Set([
   "idea.convert_to_project",
   "project.intention.register",
   "project.intention.withdraw",
+  "product.model.create",
+  "product.model.view_public",
+  "product.model.view_owner",
+  "product.model.edit",
+  "product.model.publish",
+  "product.model.retire",
+  "product.unit.register",
+  "product.unit.view_public",
+  "product.unit.view_owner",
+  "product.unit.link_item",
+  "product.unit.transition",
+  "product.passport.append",
+  "product.passport.view_public",
+  "product.passport.view_owner",
 ]);
 
 const ENGINEER_CERTIFICATION_CAPABILITIES = new Set(["quote.submit", "project.milestone.submit"]);
@@ -252,7 +270,15 @@ function allowedStatuses(capabilityCode: string, current: string): string[] {
   if (capabilityCode === "idea.archive") return ["draft", "published", "collaborating", "converted", "archived"];
   if (capabilityCode === "idea.attachment.upload" || capabilityCode === "idea.collaborator.invite" || capabilityCode === "idea.collaborator.search") return ["draft", "published", "collaborating"];
   if (capabilityCode === "idea.invitation.accept" || capabilityCode === "idea.nda.accept") return ["published", "collaborating"];
-  if (capabilityCode === "idea.convert_to_project") return ["published", "collaborating", "converted"];
+    if (capabilityCode === "idea.convert_to_project") return ["published", "collaborating", "converted"];
+  if (["product.model.view_public", "product.model.view_owner"].includes(capabilityCode)) return [current];
+  if (capabilityCode === "product.model.edit") return ["draft", "active"];
+  if (capabilityCode === "product.model.publish") return ["draft", "active"];
+  if (capabilityCode === "product.model.retire") return ["active", "retired"];
+  if (capabilityCode === "product.unit.register") return ["active"];
+  if (["product.unit.view_public", "product.unit.view_owner", "product.passport.view_public", "product.passport.view_owner", "product.passport.view_internal"].includes(capabilityCode)) return [current];
+  if (capabilityCode === "product.unit.link_item") return ["registered", "manufactured", "in_use", "idle"];
+  if (["product.unit.transition", "product.passport.append"].includes(capabilityCode)) return ["registered", "manufactured", "in_use", "idle", "listed", "under_service", "transferred", "recycling", "recycled"];
   if (capabilityCode === "file.access" || capabilityCode === "project.file.download" || capabilityCode === "project.design_file.download") return ["available"];
   if (capabilityCode.endsWith(".view") || capabilityCode.endsWith(".read") || capabilityCode.endsWith(".download")) return [current];
   if (["project.design_version.create", "project.design_version.edit", "project.design_version.submit", "project.design_file.upload", "project.milestone.create"].includes(capabilityCode)) {
@@ -481,6 +507,18 @@ export class DrizzleAuthorizationDataSource implements AuthorizationDataSource {
         assignments.push({ capabilityCode: request.capabilityCode, sourceType: "ACCOUNT_SELF", subjectId: request.accountId, status: "active", dataScope: "INVITED_RESOURCE", allowedFields: [] });
       }
     }
+    if (resource && (resource.resourceType === "product_model" || resource.resourceType === "product_unit")) {
+      const publicCapabilities = new Set(["product.model.view_public", "product.unit.view_public", "product.passport.view_public"]);
+      const isOwner = resource.ownerAccountId === request.accountId;
+      const isLifecycleMember = resource.memberAccountIds?.includes(request.accountId) === true;
+      if (isOwner) {
+        assignments.push({ capabilityCode: request.capabilityCode, sourceType: "ACCOUNT_SELF", subjectId: request.accountId, status: "active", dataScope: "OWNED_RESOURCE", allowedFields: [] });
+      } else if (publicCapabilities.has(request.capabilityCode) && resource.public) {
+        assignments.push({ capabilityCode: request.capabilityCode, sourceType: "ACCOUNT_SELF", subjectId: request.accountId, status: "active", dataScope: "PUBLIC", allowedFields: [] });
+      } else if (isLifecycleMember) {
+        assignments.push({ capabilityCode: request.capabilityCode, sourceType: "ACCOUNT_SELF", subjectId: request.accountId, status: "active", dataScope: "INVITED_RESOURCE", allowedFields: [] });
+      }
+    }
     if (resource?.resourceType === "project" && request.capabilityCode === "message.start" && resource.memberAccountIds?.includes(request.accountId)) {
       assignments.push({ capabilityCode: request.capabilityCode, sourceType: "ACCOUNT_SELF", subjectId: request.accountId, status: "active", dataScope: "INVITED_RESOURCE" });
     }
@@ -530,6 +568,52 @@ export class DrizzleAuthorizationDataSource implements AuthorizationDataSource {
       allowedStatuses: allowedStatuses(request.capabilityCode, status), confidentiality: "INTERNAL",
       availableFields: resourceFieldsFor(request.resourceType!), ...extra,
     });
+    if (request.resourceType === "product_model") {
+      const [row] = await db.select({
+        id: productModels.id,
+        ownerAccountId: productModels.ownerAccountId,
+        ownerOrganizationId: productModels.ownerOrganizationId,
+        status: productModels.status,
+        visibility: productModels.visibility,
+        authorizationVersion: productModels.authorizationVersion,
+        deletedAt: productModels.deletedAt,
+      }).from(productModels).where(eq(productModels.id, id)).limit(1);
+      if (!row || row.deletedAt) return null;
+      const isPublic = row.visibility === "public" && row.status === "active";
+      return base(row.status, {
+        ownerAccountId: row.ownerAccountId,
+        organizationId: row.ownerOrganizationId ?? undefined,
+        public: isPublic,
+        confidentiality: isPublic ? "PUBLIC" : row.visibility === "restricted" ? "CONFIDENTIAL" : "INTERNAL",
+        version: row.authorizationVersion,
+      });
+    }
+    if (request.resourceType === "product_unit") {
+      const [row] = await db.select({
+        id: productUnits.id,
+        modelOwnerAccountId: productModels.ownerAccountId,
+        ownerOrganizationId: productModels.ownerOrganizationId,
+        modelStatus: productModels.status,
+        modelVisibility: productModels.visibility,
+        currentOwnerAccountId: productUnits.currentOwnerAccountId,
+        status: productUnits.status,
+        passportVisibility: productUnits.passportVisibility,
+        authorizationVersion: productUnits.authorizationVersion,
+      }).from(productUnits).innerJoin(productModels, eq(productModels.id, productUnits.productModelId))
+        .where(eq(productUnits.id, id)).limit(1);
+      if (!row) return null;
+      const ownerAccountId = row.currentOwnerAccountId ?? row.modelOwnerAccountId;
+      const memberAccountIds = row.modelOwnerAccountId === ownerAccountId ? [ownerAccountId] : [ownerAccountId, row.modelOwnerAccountId];
+      const isPublic = row.passportVisibility === "public" && row.modelVisibility === "public" && row.modelStatus === "active";
+      return base(row.status, {
+        ownerAccountId,
+        memberAccountIds,
+        organizationId: row.ownerOrganizationId ?? undefined,
+        public: isPublic,
+        confidentiality: isPublic ? "PUBLIC" : row.passportVisibility === "restricted" ? "CONFIDENTIAL" : "INTERNAL",
+        version: row.authorizationVersion,
+      });
+    }
     if (request.resourceType === "project") {
       const [row] = await db.select().from(projects).where(eq(projects.id, id)).limit(1);
       return row ? base(row.status, { ownerAccountId: row.ownerId, projectId: row.id, memberAccountIds: [row.ownerId, row.engineerId], version: row.authorizationVersion }) : null;
