@@ -23,6 +23,8 @@ import { designVersionsRouter, prototypeMilestonesRouter } from "./routers/proje
 import { fundingCampaignsRouter, fundingPledgesRouter } from "./routers/funding-campaign-router";
 import { productModelsRouter, productUnitsRouter } from "./routers/product-lifecycle-router";
 import { contentRouter } from "./routers/content-router";
+import { commerceRouter } from "./routers/commerce-router";
+import { commerceService } from "./services/commerce-service";
 
 import * as verificationService from "./services/verification-service";
 import { listMyCertifications, listMyIdentities, submitIdentityCertification, updateAccountAndPublicProfile } from "./services/identity-service";
@@ -184,6 +186,7 @@ export const appRouter = router({
   productModels: productModelsRouter,
   productUnits: productUnitsRouter,
   content: contentRouter,
+  commerce: commerceRouter,
   location: router({
     me: protectedProcedure.query(async ({ ctx }) => {
       const preference = await db.getLocationPreference(ctx.user.id);
@@ -1443,7 +1446,7 @@ export const appRouter = router({
       throw new Error("直接修改订单状态的模拟支付已停用，请通过支付单和沙箱支付确认流程完成付款");
     }),
     cancel: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
-      const order = await db.cancelOrderTransaction(input.id, ctx.user.id);
+      const order = await commerceService.cancelCommerceOrder(ctx.user.id, input.id) ?? await db.cancelOrderTransaction(input.id, ctx.user.id);
       publishRealtime({ type: "order.updated", userId: order.buyerId === ctx.user.id ? order.sellerId : order.buyerId, payload: { orderId: order.id, status: "cancelled" } });
       return { success: true };
     }),

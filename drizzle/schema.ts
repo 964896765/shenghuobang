@@ -3007,3 +3007,155 @@ export const creatorProfiles = mysqlTable("creator_profiles",
   },
   (table) => ({ accountUnique: uniqueIndex("creator_profiles_account_uq").on(table.accountId) }),
 );
+
+/** V4 runnable-commerce extensions reuse listings, orders and sandbox payments. */
+export const listingProductLinks = mysqlTable("listing_product_links",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    listingId: int("listingId").notNull().references(() => listings.id),
+    productModelId: int("productModelId").notNull().references(() => productModels.id),
+    productUnitId: int("productUnitId").references(() => productUnits.id),
+    linkedByAccountId: int("linkedByAccountId").notNull().references(() => users.id),
+    requestId: varchar("requestId", { length: 64 }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    listingUnique: uniqueIndex("listing_product_links_listing_uq").on(table.listingId),
+    requestUnique: uniqueIndex("listing_product_links_request_uq").on(table.requestId),
+    productIndex: index("listing_product_links_product_idx").on(table.productModelId, table.listingId),
+    unitIndex: index("listing_product_links_unit_idx").on(table.productUnitId, table.listingId),
+  }),
+);
+
+export const listingSkus = mysqlTable("listing_skus",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    listingId: int("listingId").notNull().references(() => listings.id),
+    skuCode: varchar("skuCode", { length: 64 }).notNull(),
+    title: varchar("title", { length: 180 }).notNull(),
+    attributes: json("attributes").$type<Record<string, string>>().notNull(),
+    price: int("price").notNull(),
+    stock: int("stock").notNull(),
+    status: mysqlEnum("status", ["active", "inactive", "sold_out"]).default("active").notNull(),
+    createdRequestId: varchar("createdRequestId", { length: 64 }).notNull(),
+    lastRequestId: varchar("lastRequestId", { length: 64 }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({
+    listingCodeUnique: uniqueIndex("listing_skus_listing_code_uq").on(table.listingId, table.skuCode),
+    createdRequestUnique: uniqueIndex("listing_skus_created_request_uq").on(table.createdRequestId),
+    lastRequestUnique: uniqueIndex("listing_skus_last_request_uq").on(table.lastRequestId),
+    listingStatusIndex: index("listing_skus_listing_status_idx").on(table.listingId, table.status),
+  }),
+);
+
+export const userAddresses = mysqlTable("user_addresses",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    accountId: int("accountId").notNull().references(() => users.id),
+    recipientName: varchar("recipientName", { length: 100 }).notNull(),
+    phone: varchar("phone", { length: 32 }).notNull(),
+    province: varchar("province", { length: 64 }).notNull(),
+    city: varchar("city", { length: 64 }).notNull(),
+    district: varchar("district", { length: 64 }).notNull(),
+    addressLine: varchar("addressLine", { length: 255 }).notNull(),
+    postalCode: varchar("postalCode", { length: 16 }),
+    isDefault: boolean("isDefault").default(false).notNull(),
+    status: mysqlEnum("status", ["active", "deleted"]).default("active").notNull(),
+    createdRequestId: varchar("createdRequestId", { length: 64 }).notNull(),
+    lastRequestId: varchar("lastRequestId", { length: 64 }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({
+    createdRequestUnique: uniqueIndex("user_addresses_created_request_uq").on(table.createdRequestId),
+    lastRequestUnique: uniqueIndex("user_addresses_last_request_uq").on(table.lastRequestId),
+    accountStatusIndex: index("user_addresses_account_status_idx").on(table.accountId, table.status, table.isDefault),
+  }),
+);
+
+export const shoppingCarts = mysqlTable("shopping_carts",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    buyerAccountId: int("buyerAccountId").notNull().references(() => users.id),
+    status: mysqlEnum("status", ["active", "checked_out", "abandoned"]).default("active").notNull(),
+    activeDedupeKey: varchar("activeDedupeKey", { length: 64 }),
+    checkedOutAt: timestamp("checkedOutAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({
+    activeDedupeUnique: uniqueIndex("shopping_carts_active_dedupe_uq").on(table.activeDedupeKey),
+    buyerStatusIndex: index("shopping_carts_buyer_status_idx").on(table.buyerAccountId, table.status),
+  }),
+);
+
+export const shoppingCartItems = mysqlTable("shopping_cart_items",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    cartId: int("cartId").notNull().references(() => shoppingCarts.id),
+    skuId: int("skuId").notNull().references(() => listingSkus.id),
+    quantity: int("quantity").notNull(),
+    lastRequestId: varchar("lastRequestId", { length: 64 }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({
+    cartSkuUnique: uniqueIndex("shopping_cart_items_cart_sku_uq").on(table.cartId, table.skuId),
+    requestUnique: uniqueIndex("shopping_cart_items_request_uq").on(table.lastRequestId),
+    cartIndex: index("shopping_cart_items_cart_idx").on(table.cartId, table.id),
+  }),
+);
+
+export const commerceCheckoutRequests = mysqlTable("commerce_checkout_requests",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    buyerAccountId: int("buyerAccountId").notNull().references(() => users.id),
+    requestId: varchar("requestId", { length: 64 }).notNull(),
+    orderId: int("orderId").notNull().references(() => orders.id),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    requestUnique: uniqueIndex("commerce_checkout_requests_request_uq").on(table.requestId),
+    buyerOrderIndex: index("commerce_checkout_requests_buyer_order_idx").on(table.buyerAccountId, table.orderId),
+  }),
+);
+
+export const orderLineItems = mysqlTable("order_line_items",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    orderId: int("orderId").notNull().references(() => orders.id),
+    listingId: int("listingId").notNull().references(() => listings.id),
+    skuId: int("skuId").notNull().references(() => listingSkus.id),
+    skuCode: varchar("skuCode", { length: 64 }).notNull(),
+    title: varchar("title", { length: 180 }).notNull(),
+    attributes: json("attributes").$type<Record<string, string>>().notNull(),
+    quantity: int("quantity").notNull(),
+    unitPrice: int("unitPrice").notNull(),
+    lineAmount: int("lineAmount").notNull(),
+    productModelId: int("productModelId").references(() => productModels.id),
+    productUnitId: int("productUnitId").references(() => productUnits.id),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    orderSkuUnique: uniqueIndex("order_line_items_order_sku_uq").on(table.orderId, table.skuId),
+    orderIndex: index("order_line_items_order_idx").on(table.orderId, table.id),
+  }),
+);
+
+export const orderShippingSnapshots = mysqlTable("order_shipping_snapshots",
+  {
+    orderId: int("orderId").primaryKey().references(() => orders.id),
+    sourceAddressId: int("sourceAddressId").references(() => userAddresses.id),
+    recipientName: varchar("recipientName", { length: 100 }).notNull(),
+    phoneMasked: varchar("phoneMasked", { length: 32 }).notNull(),
+    phoneEncrypted: varbinary("phoneEncrypted", { length: 512 }).notNull(),
+    province: varchar("province", { length: 64 }).notNull(),
+    city: varchar("city", { length: 64 }).notNull(),
+    district: varchar("district", { length: 64 }).notNull(),
+    addressLine: varchar("addressLine", { length: 255 }).notNull(),
+    postalCode: varchar("postalCode", { length: 16 }),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+);

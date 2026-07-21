@@ -26,6 +26,10 @@ export default function PublicProductDetailScreen() {
     { publicCode: publicCode ?? "", scope: "model" },
     { enabled: Boolean(publicCode) },
   );
+  const commerceListings = trpc.commerce.listingsForProduct.useQuery(
+    { publicCode: publicCode ?? "" },
+    { enabled: Boolean(publicCode) },
+  );
 
   if (!publicCode) {
     return (
@@ -119,6 +123,18 @@ export default function PublicProductDetailScreen() {
           <View className="mt-3">
             <PrimaryButton title="查询单件产品护照" onPress={() => router.push("/products/passport" as never)} />
           </View>
+        </View>
+
+        <View className="mt-6">
+          <View className="mb-3 flex-row items-center justify-between"><Text className="text-xl font-bold text-foreground">关联商品</Text><Pressable onPress={() => router.push("/cart" as never)}><Text className="text-sm font-semibold text-primary">购物车</Text></Pressable></View>
+          {commerceListings.isLoading ? <LoadingView text="正在加载商品…" /> : commerceListings.isError ? <ErrorState title="商品加载失败" hint={commerceListings.error.message} onRetry={() => commerceListings.refetch()} /> : commerceListings.data?.length ? commerceListings.data.map(({ listing, sku }) => (
+            <Pressable key={`${listing.id}-${sku.id}`} onPress={() => router.push(`/listings/${listing.id}` as never)} className="mb-3 rounded-2xl border border-border bg-surface p-4">
+              <View className="flex-row items-center justify-between"><StatusBadge label={`库存 ${sku.stock}`} tone="green" /><Text className="text-xs text-muted">{sku.skuCode}</Text></View>
+              <Text className="mt-3 text-lg font-bold text-foreground">{sku.title}</Text>
+              <Text className="mt-1 text-sm text-muted">{listing.title}</Text>
+              <Text className="mt-2 text-xl font-bold text-action">¥{sku.price}</Text>
+            </Pressable>
+          )) : <EmptyState title="暂无关联商品" hint="产品型号已建立，但当前没有已上架且有库存的 SKU。" />}
         </View>
 
         <ProductContentSections

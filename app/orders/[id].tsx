@@ -26,6 +26,7 @@ function OrderDetailInner() {
   const router = useRouter();
   const utils = trpc.useUtils();
   const detail = trpc.orders.detail.useQuery({ id: orderId }, { enabled: !Number.isNaN(orderId) });
+  const commerceDetail = trpc.commerce.orderDetail.useQuery({ orderId }, { enabled: !Number.isNaN(orderId) });
   const finance = trpc.payments.byOrder.useQuery({ orderId }, { enabled: !Number.isNaN(orderId) });
 
   const [error, setError] = useState("");
@@ -111,6 +112,27 @@ function OrderDetailInner() {
             />
           </View>
         </View>
+
+        {commerceDetail.data?.items.length ? (
+          <View className="mt-3 rounded-2xl border border-border bg-surface p-4">
+            <Text className="text-base font-semibold text-foreground">商品明细</Text>
+            {commerceDetail.data.items.map((item) => (
+              <View key={item.id} className="mt-3 border-t border-border pt-3">
+                <Text className="font-bold text-foreground">{item.title}</Text>
+                <Text className="mt-1 text-xs text-muted">{item.skuCode} · {Object.entries(item.attributes).map(([key, value]) => `${key}:${value}`).join(" · ")}</Text>
+                <Text className="mt-1 text-sm text-action">¥{item.unitPrice} × {item.quantity} = ¥{item.lineAmount}</Text>
+                {item.productModelId ? <Text className="mt-1 text-xs text-primary">已保留产品目录关联</Text> : null}
+              </View>
+            ))}
+          </View>
+        ) : null}
+        {commerceDetail.data?.shipping ? (
+          <View className="mt-3 rounded-2xl border border-border bg-surface p-4">
+            <Text className="text-base font-semibold text-foreground">配送信息</Text>
+            <Text className="mt-2 text-sm text-foreground">{commerceDetail.data.shipping.recipientName} {commerceDetail.data.shipping.phoneMasked}</Text>
+            <Text className="mt-1 text-sm leading-6 text-muted">{commerceDetail.data.shipping.province} {commerceDetail.data.shipping.city} {commerceDetail.data.shipping.district} {commerceDetail.data.shipping.addressLine}</Text>
+          </View>
+        ) : null}
 
         {order.orderType === "swap" ? (
           <View className="bg-primary/5 rounded-2xl p-4 mt-3 border border-primary/20">

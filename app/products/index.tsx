@@ -33,7 +33,7 @@ export default function ProductCatalogScreen() {
 
   return (
     <ScreenContainer edges={["top", "left", "right", "bottom"]}>
-      <PageHeader title="可信产品" />
+      <PageHeader title="可信产品" right={<Pressable onPress={() => router.push("/cart" as never)} className="px-2"><Text className="font-semibold text-primary">购物车</Text></Pressable>} />
       <ScrollView
         refreshControl={<RefreshControl refreshing={models.isRefetching} onRefresh={() => models.refetch()} />}
         contentContainerStyle={{ padding: 16, paddingBottom: 48 }}
