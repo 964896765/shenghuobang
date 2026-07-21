@@ -20,9 +20,9 @@
 
 ## 是否新增 0032
 - 已新增：
-  - [0032_v33_b3_acceptance_intent.sql](file:///c:/Users/chejun/Documents/生活帮/shenghuobang/drizzle/0032_v33_b3_acceptance_intent.sql)
+  - [0032_v33_b3_acceptance_intent.sql](../../../drizzle/0032_v33_b3_acceptance_intent.sql)
 - 已同步 schema：
-  - [schema.ts](file:///c:/Users/chejun/Documents/生活帮/shenghuobang/drizzle/schema.ts)
+  - [schema.ts](../../../drizzle/schema.ts)
 - 未修改 `0000`—`0031`
 - 未改旧 journal
 
@@ -39,8 +39,8 @@
   - 历史验收与历史成果不会被覆盖或删除
   - `accepted` 后不再允许对同一 submission 发起返工
 - 实现位置：
-  - [project-design-prototype-service.ts](file:///c:/Users/chejun/Documents/生活帮/shenghuobang/server/services/project-design-prototype-service.ts)
-  - [project-acceptance-intention-router.ts](file:///c:/Users/chejun/Documents/生活帮/shenghuobang/server/routers/project-acceptance-intention-router.ts)
+  - [project-design-prototype-service.ts](../../../server/services/project-design-prototype-service.ts)
+  - [project-acceptance-intention-router.ts](../../../server/routers/project-acceptance-intention-router.ts)
 
 ## 返工与重新提交
 - 新增接口：
@@ -92,7 +92,7 @@
   - `project.intention.withdraw`
   - `project.intention.view_project`
 - 接入位置：
-  - [drizzle-data-source.ts](file:///c:/Users/chejun/Documents/生活帮/shenghuobang/server/authorization/drizzle-data-source.ts)
+  - [drizzle-data-source.ts](../../../server/authorization/drizzle-data-source.ts)
 - 规则：
   - `currentRole` 不增权
   - 项目成员实时有效才有项目级验收/查看权限

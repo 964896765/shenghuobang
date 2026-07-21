@@ -15,8 +15,8 @@
 - 迁移同时追加 B2.1 capability 码到 `capabilities`
 
 ## Service 和 Router
-- 新增 Service：[project-design-prototype-service.ts](file:///c:/Users/chejun/Documents/生活帮/shenghuobang/server/services/project-design-prototype-service.ts)
-- 新增 Router：[project-design-prototype-router.ts](file:///c:/Users/chejun/Documents/生活帮/shenghuobang/server/routers/project-design-prototype-router.ts)
+- 新增 Service：[project-design-prototype-service.ts](../../../server/services/project-design-prototype-service.ts)
+- 新增 Router：[project-design-prototype-router.ts](../../../server/routers/project-design-prototype-router.ts)
 - 新增 `designVersions.*`
   - `createDraft`
   - `updateDraft`
@@ -69,8 +69,8 @@
   - 对 legacy 普通项目，在 Service 内按需补齐兼容 membership 映射，不复制第二套成员体系
 
 ## 文件撤权
-- 新增受控访问入口：[projectDesignPrototypeFileAccess.ts](file:///c:/Users/chejun/Documents/生活帮/shenghuobang/server/_core/projectDesignPrototypeFileAccess.ts)
-- 新增 token：[project-delivery-file-access-token.ts](file:///c:/Users/chejun/Documents/生活帮/shenghuobang/server/storage/project-delivery-file-access-token.ts)
+- 新增受控访问入口：[projectDesignPrototypeFileAccess.ts](../../../server/_core/projectDesignPrototypeFileAccess.ts)
+- 新增 token：[project-delivery-file-access-token.ts](../../../server/storage/project-delivery-file-access-token.ts)
 - 令牌绑定：
   - `accountId`
   - `projectId`

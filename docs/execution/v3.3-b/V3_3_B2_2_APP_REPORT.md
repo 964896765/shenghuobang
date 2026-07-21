@@ -1,14 +1,14 @@
 # V3.3-B2.2 App Report
 
 ## 页面
-- 项目详情入口扩展：[projects/[id].tsx](file:///c:/Users/chejun/Documents/生活帮/shenghuobang/app/projects/[id].tsx)
-- 设计版本列表：[design-versions/[projectId].tsx](file:///c:/Users/chejun/Documents/生活帮/shenghuobang/app/projects/design-versions/[projectId].tsx)
-- 设计版本详情：[design-version/[designVersionId].tsx](file:///c:/Users/chejun/Documents/生活帮/shenghuobang/app/projects/design-version/[designVersionId].tsx)
-- 设计草稿创建/编辑：[design-version-edit.tsx](file:///c:/Users/chejun/Documents/生活帮/shenghuobang/app/projects/design-version-edit.tsx)
-- 原型里程碑列表：[prototype-milestones/[projectId].tsx](file:///c:/Users/chejun/Documents/生活帮/shenghuobang/app/projects/prototype-milestones/[projectId].tsx)
-- 原型里程碑详情：[prototype-milestone/[milestoneId].tsx](file:///c:/Users/chejun/Documents/生活帮/shenghuobang/app/projects/prototype-milestone/[milestoneId].tsx)
-- 原型里程碑创建/编辑：[prototype-milestone-edit.tsx](file:///c:/Users/chejun/Documents/生活帮/shenghuobang/app/projects/prototype-milestone-edit.tsx)
-- 原型成果提交：[prototype-deliverable-submit.tsx](file:///c:/Users/chejun/Documents/生活帮/shenghuobang/app/projects/prototype-deliverable-submit.tsx)
+- 项目详情入口扩展：[projects/[id].tsx](../../../app/projects/[id].tsx)
+- 设计版本列表：[design-versions/[projectId].tsx](../../../app/projects/design-versions/[projectId].tsx)
+- 设计版本详情：[design-version/[designVersionId].tsx](../../../app/projects/design-version/[designVersionId].tsx)
+- 设计草稿创建/编辑：[design-version-edit.tsx](../../../app/projects/design-version-edit.tsx)
+- 原型里程碑列表：[prototype-milestones/[projectId].tsx](../../../app/projects/prototype-milestones/[projectId].tsx)
+- 原型里程碑详情：[prototype-milestone/[milestoneId].tsx](../../../app/projects/prototype-milestone/[milestoneId].tsx)
+- 原型里程碑创建/编辑：[prototype-milestone-edit.tsx](../../../app/projects/prototype-milestone-edit.tsx)
+- 原型成果提交：[prototype-deliverable-submit.tsx](../../../app/projects/prototype-deliverable-submit.tsx)
 
 ## 项目入口
 - 在现有项目详情中新增“设计版本”“原型里程碑”两个区域，没有重做项目详情整体结构
@@ -39,8 +39,8 @@
 - 复用项目文件上传：
   - `projects.uploadFile`
 - 新增前端 contract/helper：
-  - [project-design-prototype-app-contract.ts](file:///c:/Users/chejun/Documents/生活帮/shenghuobang/lib/project-design-prototype-app-contract.ts)
-  - [project-design-prototype-app.ts](file:///c:/Users/chejun/Documents/生活帮/shenghuobang/lib/project-design-prototype-app.ts)
+  - [project-design-prototype-app-contract.ts](../../../lib/project-design-prototype-app-contract.ts)
+  - [project-design-prototype-app.ts](../../../lib/project-design-prototype-app.ts)
 
 ## 设计文件
 - 设计草稿保存后即可上传设计文件，并绑定 `designVersionId`
