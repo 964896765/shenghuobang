@@ -171,12 +171,20 @@ export const productModelsRouter = router({
 });
 
 export const productUnitsRouter = router({
-  publicDetail: publicProcedure.input(z.object({
+  listMine: protectedProcedure.input(z.object({
+    limit: limit.optional(),
+    cursor: cursor.optional(),
+  }).strict().optional()).query(({ ctx, input }) => call(() => productLifecycleService.listOwnerUnits(ctx.user.id, input ?? {}))),
+
+  publicPassport: publicProcedure.input(z.object({
     publicCode: z.string().trim().min(1).max(40),
   }).strict()).query(({ input }) => call(() => productLifecycleService.publicUnitDetail(input.publicCode))),
 
   detail: protectedProcedure.input(z.object({ productUnitId: positiveId }).strict())
     .query(({ ctx, input }) => call(() => productLifecycleService.ownerUnitDetail(ctx.user.id, input.productUnitId))),
+
+  internalDetail: protectedProcedure.input(z.object({ productUnitId: positiveId }).strict())
+    .query(({ ctx, input }) => call(() => productLifecycleService.internalUnitDetail(ctx.user.id, input.productUnitId))),
 
   register: protectedProcedure.input(z.object({
     productModelId: positiveId,

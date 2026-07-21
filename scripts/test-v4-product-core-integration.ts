@@ -197,13 +197,23 @@ async function main() {
       "FORBIDDEN",
       "无关账号可查看所有者产品单元详情",
     );
-    const publicUnit = await publicCaller.productUnits.publicDetail({ publicCode: registered.unit.publicCode });
+    const publicUnit = await publicCaller.productUnits.publicPassport({ publicCode: registered.unit.publicCode });
     const publicUnitPayload = JSON.stringify(publicUnit);
     check(publicUnit.events.length === 3 && publicUnit.events.every((event) => event.eventType !== "internal_quality_note"), "公开护照包含内部事件或事件数量错误");
+    check(publicUnit.integrity.verified && publicUnit.integrity.visibleEventCount === publicUnit.events.length, "公开护照未返回可信的哈希链完整性结果");
     for (const forbiddenField of ["ownerAccountId", "linkedItemId", "serialNumber", "actorAccountId", "requestId", "internal-001"]) {
       check(!publicUnitPayload.includes(forbiddenField), `公开护照泄露字段或值 ${forbiddenField}`);
     }
-    results.push("产品单元所有者数据范围与公开护照字段脱敏");
+    const ownerUnit = await ownerCaller.productUnits.detail({ productUnitId: registered.unit.id });
+    check(ownerUnit.integrity.verified && ownerUnit.events.length === 3, "本人护照未正确过滤内部事件或返回完整性结果");
+    const internalUnit = await ownerCaller.productUnits.internalDetail({ productUnitId: registered.unit.id });
+    check(internalUnit.integrity.verified && internalUnit.events.length === 4 && internalUnit.events.some((event) => event.eventType === "internal_quality_note"), "内部护照未返回完整追溯事件");
+    await expectTrpcCode(
+      () => strangerCaller.productUnits.internalDetail({ productUnitId: registered.unit.id }),
+      "FORBIDDEN",
+      "无关账号可查看产品内部护照",
+    );
+    results.push("产品单元三类护照视图、完整性校验与最小披露");
 
     const [hashRows] = await admin.execute<(RowDataPacket & { sequenceNumber: number; previousEventHash: string | null; eventHash: string })[]>(
       "SELECT sequenceNumber,previousEventHash,eventHash FROM product_passport_events WHERE productUnitId=? ORDER BY sequenceNumber",

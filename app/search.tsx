@@ -10,7 +10,7 @@ import { NeedCard, EngineerCard, ListingCard } from "@/components/cards";
 import { useColors } from "@/hooks/use-colors";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 
-import { useForegroundLocation } from "@/hooks/use-foreground-location";
+import { useGlobalLocation } from "@/lib/location-context";
 
 const HOT_KEYWORDS = ["空调维修", "旧手机", "小程序开发", "家具回收", "水管漏水", "智能家居"];
 
@@ -19,7 +19,7 @@ export default function SearchScreen() {
   const colors = useColors();
   const [input, setInput] = useState("");
   const [keyword, setKeyword] = useState("");
-  const location = useForegroundLocation();
+  const location = useGlobalLocation();
 
   const enabled = keyword.trim().length > 0;
   const needs = trpc.needs.list.useQuery({ keyword, scope: "plaza", ...location.queryInput }, { enabled });

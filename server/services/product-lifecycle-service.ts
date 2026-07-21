@@ -263,6 +263,47 @@ export function productPassportEventHash(input: ProductPassportHashInput): strin
   }), "utf8").digest("hex");
 }
 
+export function verifyProductPassportEventChain(
+  events: readonly (typeof productPassportEvents.$inferSelect)[],
+): boolean {
+  let expectedSequence = 1;
+  let previousEventHash: string | null = null;
+  for (const event of events) {
+    if (event.sequenceNumber !== expectedSequence || event.previousEventHash !== previousEventHash) return false;
+    const expectedHash = productPassportEventHash({
+      productUnitId: event.productUnitId,
+      sequenceNumber: event.sequenceNumber,
+      eventType: event.eventType,
+      actorAccountId: event.actorAccountId,
+      actorOrganizationId: event.actorOrganizationId,
+      fromStatus: event.fromStatus,
+      toStatus: event.toStatus,
+      visibility: event.visibility,
+      sourceType: event.sourceType,
+      sourceId: event.sourceId,
+      requestId: event.requestId,
+      detail: event.detail,
+      previousEventHash: event.previousEventHash,
+      occurredAt: event.occurredAt,
+    });
+    if (event.eventHash !== expectedHash) return false;
+    previousEventHash = event.eventHash;
+    expectedSequence += 1;
+  }
+  return true;
+}
+
+function passportIntegrity(
+  events: readonly (typeof productPassportEvents.$inferSelect)[],
+  visibleEventCount: number,
+) {
+  return {
+    algorithm: "sha256" as const,
+    verified: verifyProductPassportEventChain(events),
+    visibleEventCount,
+  };
+}
+
 function modelPublicCode(): string {
   return `PM-${randomUUID().replaceAll("-", "").slice(0, 20).toUpperCase()}`;
 }
@@ -1019,6 +1060,39 @@ export class ProductLifecycleService {
     return { items, nextCursor: rows.length > limit ? items.at(-1)?.id ?? null : null };
   }
 
+  async listOwnerUnits(accountId: number, options: { limit?: number; cursor?: number } = {}) {
+    const limit = Math.max(1, Math.min(options.limit ?? 20, 50));
+    const db = await requireDb();
+    const rows = await db.select({ unit: productUnits, model: productModels })
+      .from(productUnits)
+      .innerJoin(productModels, eq(productModels.id, productUnits.productModelId))
+      .where(and(
+        or(eq(productUnits.currentOwnerAccountId, accountId), eq(productModels.ownerAccountId, accountId)),
+        isNull(productModels.deletedAt),
+        options.cursor ? lt(productUnits.id, options.cursor) : undefined,
+      ))
+      .orderBy(desc(productUnits.id))
+      .limit(limit + 1);
+    const pageRows = rows.slice(0, limit);
+    return {
+      items: pageRows.map(({ unit, model }) => ({
+        relationship: unit.currentOwnerAccountId === accountId ? "current_owner" as const : "model_owner" as const,
+        model: {
+          publicCode: model.publicCode,
+          name: model.name,
+          summary: model.summary,
+          categoryCode: model.categoryCode,
+          brandName: model.brandName,
+          modelCode: model.modelCode,
+          versionLabel: model.versionLabel,
+          status: model.status,
+        },
+        unit: productUnitView(unit),
+      })),
+      nextCursor: rows.length > limit ? pageRows.at(-1)?.unit.id ?? null : null,
+    };
+  }
+
   async listPublicModels(options: { limit?: number; cursor?: number; categoryCode?: string } = {}) {
     const limit = Math.max(1, Math.min(options.limit ?? 20, 50));
     const db = await requireDb();
@@ -1088,11 +1162,52 @@ export class ProductLifecycleService {
     if (!unit) throw new ProductLifecycleServiceError("PRODUCT_UNIT_NOT_FOUND");
     const [model] = await db.select().from(productModels).where(eq(productModels.id, unit.productModelId)).limit(1);
     if (!model) throw new ProductLifecycleServiceError("PRODUCT_MODEL_NOT_FOUND");
-    const events = await db.select().from(productPassportEvents).where(and(
-      eq(productPassportEvents.productUnitId, productUnitId),
-      inArray(productPassportEvents.visibility, ["public", "owner"]),
-    )).orderBy(asc(productPassportEvents.sequenceNumber));
-    return { model: productModelView(model), unit: productUnitView(unit), events: events.map(passportEventView) };
+    const allEvents = await db.select().from(productPassportEvents)
+      .where(eq(productPassportEvents.productUnitId, productUnitId))
+      .orderBy(asc(productPassportEvents.sequenceNumber));
+    const visibleEvents = allEvents.filter((event) => event.visibility === "public" || event.visibility === "owner");
+    return {
+      model: productModelView(model),
+      unit: productUnitView(unit),
+      events: visibleEvents.map(passportEventView),
+      integrity: passportIntegrity(allEvents, visibleEvents.length),
+    };
+  }
+
+  async internalUnitDetail(accountId: number, productUnitId: number) {
+    const db = await requireDb();
+    const [resource] = await db.select({
+      productModelId: productUnits.productModelId,
+      ownerOrganizationId: productModels.ownerOrganizationId,
+    })
+      .from(productUnits)
+      .innerJoin(productModels, eq(productModels.id, productUnits.productModelId))
+      .where(eq(productUnits.id, productUnitId))
+      .limit(1);
+    if (!resource) throw new ProductLifecycleServiceError("PRODUCT_UNIT_NOT_FOUND");
+    await requireAllowed(this.authorization, accountId, {
+      capabilityCode: "product.passport.view_internal",
+      resourceType: "product_model",
+      resourceId: String(resource.productModelId),
+      organizationId: resource.ownerOrganizationId ?? undefined,
+      purpose: "product_unit_internal_detail",
+      requestId: `product-unit-internal:${productUnitId}:${accountId}`,
+    });
+    const [row] = await db.select({ unit: productUnits, model: productModels })
+      .from(productUnits)
+      .innerJoin(productModels, eq(productModels.id, productUnits.productModelId))
+      .where(eq(productUnits.id, productUnitId))
+      .limit(1);
+    if (!row) throw new ProductLifecycleServiceError("PRODUCT_UNIT_NOT_FOUND");
+    const events = await db.select().from(productPassportEvents)
+      .where(eq(productPassportEvents.productUnitId, productUnitId))
+      .orderBy(asc(productPassportEvents.sequenceNumber));
+    return {
+      model: productModelView(row.model),
+      unit: productUnitView(row.unit),
+      events: events.map(passportEventView),
+      integrity: passportIntegrity(events, events.length),
+    };
   }
 
   async publicUnitDetail(publicCode: string) {
@@ -1108,14 +1223,15 @@ export class ProductLifecycleService {
         isNull(productModels.deletedAt),
       )).limit(1);
     if (!row) throw new ProductLifecycleServiceError("PRODUCT_UNIT_NOT_FOUND");
-    const events = await db.select().from(productPassportEvents).where(and(
-      eq(productPassportEvents.productUnitId, row.unit.id),
-      eq(productPassportEvents.visibility, "public"),
-    )).orderBy(asc(productPassportEvents.sequenceNumber));
+    const allEvents = await db.select().from(productPassportEvents)
+      .where(eq(productPassportEvents.productUnitId, row.unit.id))
+      .orderBy(asc(productPassportEvents.sequenceNumber));
+    const visibleEvents = allEvents.filter((event) => event.visibility === "public");
     return {
       model: publicProductModelView(row.model),
       unit: publicProductUnitView(row.unit),
-      events: events.map(publicPassportEventView),
+      events: visibleEvents.map(publicPassportEventView),
+      integrity: passportIntegrity(allEvents, visibleEvents.length),
     };
   }
 }

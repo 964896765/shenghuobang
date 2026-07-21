@@ -7,6 +7,9 @@ import {
   assertFundingCampaignTransition,
   FundingCampaignServiceError,
 } from "../server/services/funding-campaign-service";
+import { HOME_ENTRIES } from "../shared/navigation/homeEntries";
+import { PROFILE_ENTRIES } from "../shared/navigation/profileEntries";
+import { PUBLISH_ENTRIES } from "../shared/navigation/publishEntries";
 
 function source(path: string) {
   return readFileSync(resolve(process.cwd(), path), "utf8");
@@ -108,16 +111,11 @@ describe("V4 新品筹措存储与安全合约", () => {
 });
 
 describe("V4 新品筹措真实 App 闭环", () => {
-  it("公共发布、发现和我的页面都进入统一筹措路由", () => {
-    const publish = source("app/(tabs)/publish.tsx");
-    const discover = source("app/(tabs)/discover.tsx");
-    const profile = source("app/(tabs)/profile.tsx");
-    const discoverTabs = source("lib/discover-tabs.ts");
-    expect(publish).toContain("/funding/new");
-    expect(discover).toContain("fundingCampaigns.publicList.useQuery");
-    expect(discover).toContain("/funding/${item.publicCode}");
-    expect(profile).toContain("/funding/mine");
-    expect(discoverTabs).toContain('procedure: "fundingCampaigns.publicList"');
+  it("首页、发布和我的页面都进入统一筹措路由", () => {
+    expect(HOME_ENTRIES.find((entry) => entry.id === "funding")?.route).toBe("/funding");
+    expect(PUBLISH_ENTRIES.find((entry) => entry.id === "funding-progress")?.route).toContain("筹措动态");
+    expect(PROFILE_ENTRIES.find((entry) => entry.id === "funding")?.route).toBe("/funding/mine");
+    expect(source("app/funding/index.tsx")).toContain("fundingCampaigns.publicList.useQuery");
   });
 
   it("创建、公开详情和管理页面调用真实 API 且以公开码登记意向", () => {

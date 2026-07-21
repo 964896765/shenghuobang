@@ -7,6 +7,7 @@ import {
   assertProductUnitTransition,
   canonicalJson,
   productPassportEventHash,
+  verifyProductPassportEventChain,
   ProductLifecycleServiceError,
   type ProductPassportHashInput,
 } from "../server/services/product-lifecycle-service";
@@ -127,5 +128,66 @@ describe("V4 产品核心存储与 API 合约", () => {
     expect(eventPublicSource).not.toContain("actorAccountId");
     expect(eventPublicSource).not.toContain("sourceId");
     expect(eventPublicSource).not.toContain("requestId");
+  });
+});
+
+
+describe("V4 产品护照 M4 视图与完整性", () => {
+  function makeEvent(input: ProductPassportHashInput, id: number) {
+    return {
+      id,
+      ...input,
+      eventHash: productPassportEventHash(input),
+      createdAt: new Date("2026-07-21T01:02:03.000Z"),
+    } as Parameters<typeof verifyProductPassportEventChain>[0][number];
+  }
+
+  it("验证连续事件链，并检测序列号、前序哈希和事件内容的篡改", () => {
+    const firstInput: ProductPassportHashInput = {
+      productUnitId: 23,
+      sequenceNumber: 1,
+      eventType: "unit_registered",
+      actorAccountId: 7,
+      actorOrganizationId: null,
+      fromStatus: null,
+      toStatus: "registered",
+      visibility: "owner",
+      sourceType: null,
+      sourceId: null,
+      requestId: "m4-chain-001",
+      detail: { publicCode: "PU-DEMO-001" },
+      previousEventHash: null,
+      occurredAt: new Date("2026-07-21T01:02:03.000Z"),
+    };
+    const first = makeEvent(firstInput, 1);
+    const secondInput: ProductPassportHashInput = {
+      ...firstInput,
+      sequenceNumber: 2,
+      eventType: "maintenance_recorded",
+      requestId: "m4-chain-002",
+      detail: { provider: "demo-service", result: "passed" },
+      previousEventHash: first.eventHash,
+      occurredAt: new Date("2026-07-22T01:02:03.000Z"),
+    };
+    const second = makeEvent(secondInput, 2);
+
+    expect(verifyProductPassportEventChain([first, second])).toBe(true);
+    expect(verifyProductPassportEventChain([{ ...first, sequenceNumber: 2 }])).toBe(false);
+    expect(verifyProductPassportEventChain([first, { ...second, previousEventHash: "f".repeat(64) }])).toBe(false);
+    expect(verifyProductPassportEventChain([first, { ...second, eventHash: "0".repeat(64) }])).toBe(false);
+  });
+
+  it("为公开、本人和内部三类护照视图提供独立受控接口与可达页面", () => {
+    const router = source("server/routers/product-lifecycle-router.ts");
+    const service = source("server/services/product-lifecycle-service.ts");
+    expect(router).toContain("internalDetail");
+    expect(router).toContain("listMine");
+    expect(service).toContain("verifyProductPassportEventChain");
+    expect(service).toContain("passportIntegrity");
+    expect(source("app/products/passport/[publicCode].tsx")).toContain("productUnits.publicPassport");
+    expect(source("app/products/passport/owner/[id].tsx")).toContain("productUnits.detail");
+    expect(source("app/products/passport/internal/[id].tsx")).toContain("productUnits.internalDetail");
+    expect(source("app/products/passport/owner/[id]/transition.tsx")).toContain("productUnits.transition");
+    expect(source("app/products/passport/owner/[id]/append.tsx")).toContain("productUnits.appendPassport");
   });
 });

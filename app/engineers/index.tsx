@@ -7,11 +7,11 @@ import { trpc } from "@/lib/trpc";
 import { EngineerCard } from "@/components/cards";
 import { AppTextInput, EmptyState, LoadingView } from "@/components/common";
 
-import { useForegroundLocation } from "@/hooks/use-foreground-location";
+import { useGlobalLocation } from "@/lib/location-context";
 
 export default function EngineersScreen() {
   const [keyword, setKeyword] = useState("");
-  const location = useForegroundLocation();
+  const location = useGlobalLocation();
   const engineers = trpc.engineers.list.useQuery({ keyword: keyword || undefined, ...location.queryInput });
 
   return (

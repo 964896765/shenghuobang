@@ -1,137 +1,88 @@
-import React, { useState } from "react";
-import { FlatList, Pressable, RefreshControl, Text, View } from "react-native";
+import { useMemo, useState } from "react";
+import { FlatList, Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 
-import { ScreenContainer } from "@/components/screen-container";
 import { AuthGate } from "@/components/auth-gate";
-import { trpc } from "@/lib/trpc";
 import { Avatar, EmptyState, ErrorState, LoadingView } from "@/components/common";
-import { formatTime } from "@/lib/labels";
+import { ScreenContainer } from "@/components/screen-container";
 import { IconSymbol } from "@/components/ui/icon-symbol";
+import { formatTime } from "@/lib/labels";
 import { dedupeNotifications } from "@/lib/message-display";
 import { notificationRoute } from "@/lib/notification-navigation";
-import { showFeedback } from "@/lib/feedback";
+import { trpc } from "@/lib/trpc";
+import { MESSAGE_CHANNELS } from "@/shared/navigation/appNavigation";
 
-const TABS = [
-  { key: "chat", label: "聊天" },
-  { key: "notice", label: "通知" },
-] as const;
+type Channel = (typeof MESSAGE_CHANNELS)[number]["id"];
 
 function MessagesInner() {
   const router = useRouter();
-  const [tab, setTab] = useState<string>("chat");
+  const [channel, setChannel] = useState<Channel>("chat");
   const conversations = trpc.messagesRouter.conversations.useQuery();
   const notifications = trpc.messagesRouter.notifications.useQuery();
   const utils = trpc.useUtils();
-  const markRead = trpc.messagesRouter.markRead.useMutation({
-    onSuccess: () => {
-      utils.messagesRouter.notifications.invalidate();
-      utils.messagesRouter.unreadCount.invalidate();
-    },
-  });
-  const notificationData = dedupeNotifications(notifications.data ?? []);
+  const markRead = trpc.messagesRouter.markRead.useMutation({ onSuccess: () => {
+    void utils.messagesRouter.notifications.invalidate();
+    void utils.messagesRouter.unreadCount.invalidate();
+  } });
+  const rows = useMemo(() => {
+    const all = dedupeNotifications(notifications.data ?? []);
+    if (channel === "business") return all.filter((item) => ["order", "project", "need"].includes(String(item.category)));
+    if (channel === "interaction") return all.filter((item) => ["interaction", "content", "social"].includes(String(item.category)));
+    if (channel === "system") return all.filter((item) => String(item.category) === "system");
+    return [];
+  }, [channel, notifications.data]);
 
   return (
     <View className="flex-1">
-      <View className="flex-row items-center justify-between px-4 pt-2 pb-3">
+      <View className="flex-row items-center justify-between px-4 pb-3 pt-3">
         <Text className="text-2xl font-bold text-foreground">消息</Text>
-        {tab === "notice" ? (
-          <Pressable onPress={() => markRead.mutate({})} style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}>
-            <Text className="text-sm text-primary">全部已读</Text>
-          </Pressable>
-        ) : null}
+        {channel !== "chat" ? <Pressable onPress={() => markRead.mutate({})}><Text className="text-sm text-primary">全部已读</Text></Pressable> : null}
       </View>
-      <View className="flex-row px-4 gap-2 pb-2">
-        {TABS.map((t) => (
-          <Pressable key={t.key} onPress={() => setTab(t.key)} style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
-            <View className={t.key === tab ? "bg-primary rounded-full px-5 py-1.5" : "bg-surface border border-border rounded-full px-5 py-1.5"}>
-              <Text className={t.key === tab ? "text-white text-sm font-medium" : "text-foreground text-sm"}>{t.label}</Text>
-            </View>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: 10 }}>
+        {MESSAGE_CHANNELS.map((item) => (
+          <Pressable key={item.id} onPress={() => setChannel(item.id)} className={`mx-1 rounded-full px-5 py-2 ${channel === item.id ? "bg-primary" : "border border-border bg-surface"}`}>
+            <Text className={channel === item.id ? "font-medium text-white" : "text-foreground"}>{item.title}</Text>
           </Pressable>
         ))}
-      </View>
+      </ScrollView>
 
-      {tab === "chat" ? (
-        conversations.isLoading ? (
-          <LoadingView />
-        ) : conversations.isError ? (
-          <ErrorState title="无法加载会话" hint={conversations.error.message} onRetry={() => conversations.refetch()} />
-        ) : (
-          <FlatList
-            data={conversations.data ?? []}
-            keyExtractor={(i) => String(i.id)}
-            contentContainerStyle={{ paddingBottom: 24 }}
-            refreshControl={<RefreshControl refreshing={conversations.isRefetching} onRefresh={() => conversations.refetch()} />}
-            ListEmptyComponent={<EmptyState title="暂无聊天" hint="与工程师或买家沟通时,会话会显示在这里。" />}
-            renderItem={({ item }) => (
-              <Pressable
-                onPress={() => router.push(`/chat/${item.id}` as any)}
-                style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
-              >
-                <View className="flex-row items-center px-4 py-3">
-                  <Avatar name={item.otherNickname} size={46} />
-                  <View className="flex-1 ml-3 border-b border-border pb-3">
-                    <View className="flex-row items-center justify-between">
-                      <Text className="text-base font-semibold text-foreground">{item.otherNickname}</Text>
-                      <Text className="text-xs text-muted">{formatTime(item.lastMessageAt)}</Text>
-                    </View>
-                    <Text className="text-sm text-muted mt-0.5" numberOfLines={1}>
-                      {item.lastMessage ?? "开始聊天吧"}
-                    </Text>
-                  </View>
-                  {item.unreadCount > 0 ? (
-                    <View className="min-w-5 h-5 px-1.5 rounded-full bg-error items-center justify-center ml-2">
-                      <Text className="text-[10px] text-white font-semibold">{item.unreadCount > 99 ? "99+" : item.unreadCount}</Text>
-                    </View>
-                  ) : null}
-                </View>
-              </Pressable>
-            )}
-          />
-        )
-      ) : notifications.isLoading ? (
-        <LoadingView />
-      ) : notifications.isError ? (
-        <ErrorState title="无法加载通知" hint={notifications.error.message} onRetry={() => notifications.refetch()} />
+      {channel === "chat" ? conversations.isLoading ? <LoadingView /> : conversations.isError ? (
+        <ErrorState title="无法加载会话" hint={conversations.error.message} onRetry={() => conversations.refetch()} />
       ) : (
         <FlatList
-          data={notificationData}
-          keyExtractor={(i) => String(i.id)}
-          contentContainerStyle={{ paddingBottom: 24 }}
-          refreshControl={<RefreshControl refreshing={notifications.isRefetching} onRefresh={() => notifications.refetch()} />}
-          ListEmptyComponent={<EmptyState title="暂无通知" hint="项目、订单、系统通知会显示在这里。" />}
+          data={conversations.data ?? []}
+          keyExtractor={(item) => String(item.id)}
+          refreshControl={<RefreshControl refreshing={conversations.isRefetching} onRefresh={() => conversations.refetch()} />}
+          ListEmptyComponent={<EmptyState title="暂无聊天" hint="从需求、产品或服务场景发起沟通后，会话会统一显示在这里。" />}
           renderItem={({ item }) => (
-            <Pressable
-              onPress={() => {
-                if (!item.isRead) markRead.mutate({ id: item.id });
-                const route = notificationRoute(item.refType, item.refId);
-                if (route) router.push(route as never);
-                else showFeedback("通知已读", "这条通知没有可打开的页面，相关内容可能已结束或被删除。");
-              }}
-              style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
-            >
-              <View className="flex-row px-4 py-3">
-                <View className="w-10 h-10 rounded-full bg-primary/10 items-center justify-center mt-0.5">
-                  <IconSymbol
-                    name={item.category === "order" ? "cart.fill" : item.category === "project" ? "folder.fill" : "bell.fill"}
-                    size={18}
-                    color="#16A34A"
-                  />
-                </View>
-                <View className="flex-1 ml-3 border-b border-border pb-3">
-                  <View className="flex-row items-center justify-between">
-                    <View className="flex-row items-center flex-1">
-                      <Text className="text-base font-semibold text-foreground" numberOfLines={1}>
-                        {item.title}
-                      </Text>
-                      {!item.isRead ? <View className="w-2 h-2 rounded-full bg-error ml-2" /> : null}
-                    </View>
-                    <Text className="text-xs text-muted ml-2">{formatTime(item.createdAt)}</Text>
-                  </View>
-                  <Text className="text-sm text-muted mt-0.5 leading-5" numberOfLines={2}>
-                    {item.content}
-                  </Text>
-                </View>
+            <Pressable onPress={() => router.push(`/chat/${item.id}` as never)} className="flex-row items-center px-4 py-3">
+              <Avatar name={item.otherNickname} size={46} />
+              <View className="ml-3 flex-1 border-b border-border pb-3">
+                <View className="flex-row justify-between"><Text className="font-semibold text-foreground">{item.otherNickname}</Text><Text className="text-xs text-muted">{formatTime(item.lastMessageAt)}</Text></View>
+                <Text className="mt-1 text-sm text-muted" numberOfLines={1}>{item.lastMessage ?? "开始聊天"}</Text>
+              </View>
+              {item.unreadCount > 0 ? <View className="ml-2 min-w-5 rounded-full bg-error px-1.5 py-0.5"><Text className="text-center text-[10px] text-white">{item.unreadCount > 99 ? "99+" : item.unreadCount}</Text></View> : null}
+            </Pressable>
+          )}
+        />
+      ) : notifications.isLoading ? <LoadingView /> : notifications.isError ? (
+        <ErrorState title="无法加载消息" hint={notifications.error.message} onRetry={() => notifications.refetch()} />
+      ) : (
+        <FlatList
+          data={rows}
+          keyExtractor={(item) => String(item.id)}
+          refreshControl={<RefreshControl refreshing={notifications.isRefetching} onRefresh={() => notifications.refetch()} />}
+          ListEmptyComponent={<EmptyState title={`暂无${MESSAGE_CHANNELS.find((item) => item.id === channel)?.title}消息`} hint="相关消息产生后会统一映射到当前分类。" />}
+          renderItem={({ item }) => (
+            <Pressable onPress={() => {
+              if (!item.isRead) markRead.mutate({ id: item.id });
+              const route = notificationRoute(item.refType, item.refId);
+              if (route) router.push(route as never);
+            }} className="flex-row px-4 py-3">
+              <View className="h-10 w-10 items-center justify-center rounded-full bg-primary/10"><IconSymbol name={String(item.category) === "order" ? "cart.fill" : String(item.category) === "project" ? "folder.fill" : "message.fill"} size={19} color="#16A34A" /></View>
+              <View className="ml-3 flex-1 border-b border-border pb-3">
+                <View className="flex-row items-center"><Text className="flex-1 font-semibold text-foreground" numberOfLines={1}>{item.title}</Text>{!item.isRead ? <View className="h-2 w-2 rounded-full bg-error" /> : null}</View>
+                <Text className="mt-1 text-sm text-muted" numberOfLines={2}>{item.content}</Text>
               </View>
             </Pressable>
           )}
@@ -142,11 +93,5 @@ function MessagesInner() {
 }
 
 export default function MessagesScreen() {
-  return (
-    <ScreenContainer>
-      <AuthGate title="登录后查看消息">
-        <MessagesInner />
-      </AuthGate>
-    </ScreenContainer>
-  );
+  return <ScreenContainer><AuthGate title="登录后查看消息"><MessagesInner /></AuthGate></ScreenContainer>;
 }
