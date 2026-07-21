@@ -14,6 +14,7 @@ import { USER_DISCOVER_TABS } from "@/lib/discover-tabs";
 
 import { useForegroundLocation } from "@/hooks/use-foreground-location";
 import { asIdeaListItems } from "@/lib/idea-app";
+import { FUNDING_STATUS_LABELS, fundingProgress, type FundingCampaignStatus } from "@/lib/funding-app";
 import { startLogin } from "@/constants/app";
 
 function TabBar({ tabs, active, onChange }: { tabs: readonly { key: string; label: string }[]; active: string; onChange: (k: string) => void }) {
@@ -38,6 +39,7 @@ function UserDiscover() {
   const [keyword, setKeyword] = useState("");
   const location = useForegroundLocation();
   const ideas = trpc.ideas.listPublic.useQuery({ limit: 20 }, { enabled: tab === "ideas" && isAuthenticated });
+  const funding = trpc.fundingCampaigns.publicList.useQuery({ limit: 20 }, { enabled: tab === "funding" });
   const ideaRows = useMemo(() => {
     const rows = asIdeaListItems(ideas.data ?? []);
     const normalized = keyword.trim().toLocaleLowerCase();
@@ -45,6 +47,13 @@ function UserDiscover() {
     return rows.filter((item) => [item.title, item.summary, ...(item.tags ?? [])]
       .some((value) => value?.toLocaleLowerCase().includes(normalized)));
   }, [ideas.data, keyword]);
+  const fundingRows = useMemo(() => {
+    const rows = funding.data?.items ?? [];
+    const normalized = keyword.trim().toLocaleLowerCase();
+    if (!normalized) return rows;
+    return rows.filter((item) => [item.title, item.summary, item.categoryCode]
+      .some((value) => value?.toLocaleLowerCase().includes(normalized)));
+  }, [funding.data, keyword]);
 
   const needs = trpc.needs.list.useQuery({ scope: "plaza", keyword: keyword || undefined, ...location.queryInput }, { enabled: tab === "needs" });
   const engineers = trpc.engineers.list.useQuery({ keyword: keyword || undefined, ...location.queryInput }, { enabled: tab === "engineers" });
@@ -54,15 +63,15 @@ function UserDiscover() {
   );
   const openRequests = trpc.recycling.openRequests.useQuery(location.queryInput, { enabled: tab === "recycling" });
 
-  const loading = ideas.isLoading || needs.isLoading || engineers.isLoading || listings.isLoading || openRequests.isLoading;
-  const activeQuery = tab === "ideas" ? ideas : tab === "needs" ? needs : tab === "engineers" ? engineers : tab === "recycling" ? openRequests : listings;
+  const loading = ideas.isLoading || funding.isLoading || needs.isLoading || engineers.isLoading || listings.isLoading || openRequests.isLoading;
+  const activeQuery = tab === "ideas" ? ideas : tab === "funding" ? funding : tab === "needs" ? needs : tab === "engineers" ? engineers : tab === "recycling" ? openRequests : listings;
 
   return (
     <View className="flex-1">
       <View className="px-4 pt-2 pb-3">
         <Text className="text-2xl font-bold text-foreground mb-1">发现</Text>
-        <Text className="text-sm text-muted mb-3">从真实需求与公开创意出发，发现可信的人、物品和循环服务。</Text>
-        <AppTextInput placeholder="搜索创意、需求、工程师或物品" value={keyword} onChangeText={setKeyword} />
+        <Text className="text-sm text-muted mb-3">从真实需求、公开创意和新品筹措出发，发现可信的人、物品和循环服务。</Text>
+        <AppTextInput placeholder="搜索创意、筹措、需求、工程师或物品" value={keyword} onChangeText={setKeyword} />
       </View>
       <TabBar tabs={USER_DISCOVER_TABS} active={tab} onChange={setTab} />
       {loading ? (
@@ -82,6 +91,32 @@ function UserDiscover() {
             ListEmptyComponent={<EmptyState title="暂无匹配创意" hint={keyword ? "换一个关键词试试。" : "成为第一个发布公开创意的人。"} actionTitle="发布创意" onAction={() => router.push("/ideas/edit" as never)} />}
           />
         )
+      ) : tab === "funding" ? (
+        <FlatList
+          data={fundingRows}
+          keyExtractor={(item) => item.publicCode}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}
+          refreshControl={<RefreshControl refreshing={funding.isRefetching} onRefresh={() => funding.refetch()} />}
+          ListEmptyComponent={<EmptyState title="暂无匹配筹措" hint={keyword ? "换一个关键词试试。" : "公开新品筹措会显示在这里。"} actionTitle="发起筹措" onAction={() => router.push("/funding/new" as never)} />}
+          renderItem={({ item }) => {
+            const status = item.status as FundingCampaignStatus;
+            const progress = fundingProgress(item.pledgedQuantity, item.goalQuantity);
+            return (
+              <Pressable onPress={() => router.push(`/funding/${item.publicCode}` as never)} style={({ pressed }) => ({ opacity: pressed ? 0.72 : 1 })}>
+                <View className="bg-surface rounded-2xl p-4 mb-3 border border-border">
+                  <View className="flex-row items-center justify-between gap-3">
+                    <StatusBadge label={FUNDING_STATUS_LABELS[status]} tone={status === "succeeded" ? "green" : status === "active" ? "blue" : "gray"} small />
+                    <Text className="text-xs text-muted">{item.sourceType === "idea" ? "创意来源" : "需求来源"}</Text>
+                  </View>
+                  <Text className="text-base font-semibold text-foreground mt-2" numberOfLines={1}>{item.title}</Text>
+                  <Text className="text-sm text-muted mt-1" numberOfLines={2}>{item.summary}</Text>
+                  <View className="h-2 bg-border rounded-full overflow-hidden mt-3"><View className="h-2 bg-primary" style={{ width: `${progress}%` }} /></View>
+                  <Text className="text-xs text-foreground mt-2">{item.pledgedQuantity} / {item.goalQuantity} 份 · {item.activePledgeCount} 位支持者</Text>
+                </View>
+              </Pressable>
+            );
+          }}
+        />
       ) : tab === "needs" ? (
         <FlatList
           data={needs.data ?? []}

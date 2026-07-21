@@ -20,6 +20,7 @@ import { accountProfileRouter, certificationRouter, identityRouter, organization
 import { ideasRouter } from "./routers/ideas-router";
 import { prototypeAcceptancesRouter, projectIntentionsRouter } from "./routers/project-acceptance-intention-router";
 import { designVersionsRouter, prototypeMilestonesRouter } from "./routers/project-design-prototype-router";
+import { fundingCampaignsRouter, fundingPledgesRouter } from "./routers/funding-campaign-router";
 import { productModelsRouter, productUnitsRouter } from "./routers/product-lifecycle-router";
 
 import * as verificationService from "./services/verification-service";
@@ -177,6 +178,8 @@ export const appRouter = router({
   prototypeMilestones: prototypeMilestonesRouter,
   prototypeAcceptances: prototypeAcceptancesRouter,
   projectIntentions: projectIntentionsRouter,
+  fundingCampaigns: fundingCampaignsRouter,
+  fundingPledges: fundingPledgesRouter,
   productModels: productModelsRouter,
   productUnits: productUnitsRouter,
   location: router({

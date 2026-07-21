@@ -20,6 +20,13 @@ const PUBLISH_GROUPS = [
         color: "#7C3AED",
       },
       {
+        icon: "chart.bar.fill",
+        title: "发起新品筹措",
+        desc: "从本人需求或创意验证真实支持意向，不收取资金",
+        route: "/funding/new",
+        color: "#DC2626",
+      },
+      {
         icon: "questionmark.circle.fill",
         title: "我遇到了问题",
         desc: "描述生活中的问题，整理成清晰需求",

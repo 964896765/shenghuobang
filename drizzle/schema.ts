@@ -2582,7 +2582,7 @@ export const productSourceLinks = mysqlTable("product_source_links",
   {
     id: int("id").autoincrement().primaryKey(),
     productModelId: int("productModelId").notNull().references(() => productModels.id),
-    sourceType: mysqlEnum("sourceType", ["need", "idea", "project", "legacy_item"]).notNull(),
+    sourceType: mysqlEnum("sourceType", ["need", "idea", "project", "legacy_item", "funding_campaign"]).notNull(),
     sourceId: int("sourceId").notNull(),
     relationType: mysqlEnum("relationType", ["derived_from", "validated_by", "produced_by", "migrated_from"]).default("derived_from").notNull(),
     createdByAccountId: int("createdByAccountId").notNull().references(() => users.id),
@@ -2661,3 +2661,106 @@ export const productPassportEvents = mysqlTable("product_passport_events",
   }),
 );
 export type ProductPassportEvent = typeof productPassportEvents.$inferSelect;
+
+// ============ V4 新品筹措与意向验证 ============
+
+/** 新品筹措活动：验证真实需求与首批支持意向，不代表订单、支付、股权或收益承诺。 */
+export const fundingCampaigns = mysqlTable("funding_campaigns",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    publicCode: varchar("publicCode", { length: 32 }).notNull(),
+    ownerAccountId: int("ownerAccountId").notNull().references(() => users.id),
+    sourceType: mysqlEnum("sourceType", ["need", "idea", "project", "product_model"]).notNull(),
+    sourceId: int("sourceId").notNull(),
+    title: varchar("title", { length: 160 }).notNull(),
+    summary: varchar("summary", { length: 500 }).notNull(),
+    description: text("description").notNull(),
+    categoryCode: varchar("categoryCode", { length: 64 }).notNull(),
+    coverUrl: varchar("coverUrl", { length: 1000 }),
+    goalQuantity: int("goalQuantity").notNull(),
+    pledgedQuantity: int("pledgedQuantity").default(0).notNull(),
+    activePledgeCount: int("activePledgeCount").default(0).notNull(),
+    evidence: json("evidence").$type<Array<Record<string, unknown>>>().notNull(),
+    verificationSummary: text("verificationSummary"),
+    riskSummary: text("riskSummary").notNull(),
+    visibility: mysqlEnum("visibility", ["public", "owner_only"]).default("owner_only").notNull(),
+    status: mysqlEnum("status", ["draft", "reviewing", "active", "succeeded", "failed", "cancelled", "closed"]).default("draft").notNull(),
+    authorizationVersion: int("authorizationVersion").default(1).notNull(),
+    activeSourceDedupeKey: varchar("activeSourceDedupeKey", { length: 191 }),
+    createdRequestId: varchar("createdRequestId", { length: 64 }).notNull(),
+    lastRequestId: varchar("lastRequestId", { length: 64 }).notNull(),
+    startsAt: timestamp("startsAt"),
+    endsAt: timestamp("endsAt"),
+    publishedAt: timestamp("publishedAt"),
+    closedAt: timestamp("closedAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+    deletedAt: timestamp("deletedAt"),
+  },
+  (table) => ({
+    publicCodeUnique: uniqueIndex("funding_campaigns_public_code_uq").on(table.publicCode),
+    activeSourceUnique: uniqueIndex("funding_campaigns_active_source_uq").on(table.activeSourceDedupeKey),
+    createdRequestUnique: uniqueIndex("funding_campaigns_created_request_uq").on(table.createdRequestId),
+    lastRequestUnique: uniqueIndex("funding_campaigns_last_request_uq").on(table.lastRequestId),
+    ownerStatusIndex: index("funding_campaigns_owner_status_idx").on(table.ownerAccountId, table.status, table.deletedAt),
+    publicFeedIndex: index("funding_campaigns_public_feed_idx").on(table.visibility, table.status, table.publishedAt),
+    sourceIndex: index("funding_campaigns_source_idx").on(table.sourceType, table.sourceId),
+    deadlineIndex: index("funding_campaigns_deadline_idx").on(table.status, table.endsAt),
+  }),
+);
+export type FundingCampaign = typeof fundingCampaigns.$inferSelect;
+export type InsertFundingCampaign = typeof fundingCampaigns.$inferInsert;
+
+/** 新品支持意向：只记录数量意向，不创建订单、支付、库存锁定或投资关系。 */
+export const fundingPledges = mysqlTable("funding_pledges",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    campaignId: int("campaignId").notNull().references(() => fundingCampaigns.id),
+    supporterAccountId: int("supporterAccountId").notNull().references(() => users.id),
+    quantity: int("quantity").default(1).notNull(),
+    note: text("note"),
+    cityName: varchar("cityName", { length: 100 }),
+    status: mysqlEnum("status", ["active", "withdrawn"]).default("active").notNull(),
+    authorizationVersion: int("authorizationVersion").default(1).notNull(),
+    activeDedupeKey: varchar("activeDedupeKey", { length: 191 }),
+    requestId: varchar("requestId", { length: 64 }).notNull(),
+    lastRequestId: varchar("lastRequestId", { length: 64 }).notNull(),
+    withdrawnAt: timestamp("withdrawnAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({
+    requestUnique: uniqueIndex("funding_pledges_request_uq").on(table.requestId),
+    lastRequestUnique: uniqueIndex("funding_pledges_last_request_uq").on(table.lastRequestId),
+    activeDedupeUnique: uniqueIndex("funding_pledges_active_dedupe_uq").on(table.activeDedupeKey),
+    supporterStatusIndex: index("funding_pledges_supporter_status_idx").on(table.supporterAccountId, table.status),
+    campaignStatusIndex: index("funding_pledges_campaign_status_idx").on(table.campaignId, table.status, table.createdAt),
+  }),
+);
+export type FundingPledge = typeof fundingPledges.$inferSelect;
+export type InsertFundingPledge = typeof fundingPledges.$inferInsert;
+
+/** 筹措事件：仅追加保存活动状态、支持与撤回历史，禁止静默覆盖关键事实。 */
+export const fundingCampaignEvents = mysqlTable("funding_campaign_events",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    campaignId: int("campaignId").notNull().references(() => fundingCampaigns.id),
+    sequenceNumber: int("sequenceNumber").notNull(),
+    eventType: varchar("eventType", { length: 64 }).notNull(),
+    actorAccountId: int("actorAccountId").notNull().references(() => users.id),
+    fromStatus: varchar("fromStatus", { length: 32 }),
+    toStatus: varchar("toStatus", { length: 32 }),
+    pledgeId: int("pledgeId").references(() => fundingPledges.id),
+    requestId: varchar("requestId", { length: 64 }).notNull(),
+    detail: json("detail").$type<Record<string, unknown>>().notNull(),
+    occurredAt: timestamp("occurredAt").notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    requestUnique: uniqueIndex("funding_campaign_events_request_uq").on(table.requestId),
+    campaignSequenceUnique: uniqueIndex("funding_campaign_events_campaign_sequence_uq").on(table.campaignId, table.sequenceNumber),
+    timelineIndex: index("funding_campaign_events_timeline_idx").on(table.campaignId, table.occurredAt),
+    pledgeIndex: index("funding_campaign_events_pledge_idx").on(table.pledgeId),
+  }),
+);
+export type FundingCampaignEvent = typeof fundingCampaignEvents.$inferSelect;

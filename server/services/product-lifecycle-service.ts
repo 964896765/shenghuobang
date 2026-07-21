@@ -3,6 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { and, asc, desc, eq, inArray, isNull, lt, or } from "drizzle-orm";
 
 import {
+  fundingCampaigns,
   ideas,
   items,
   needs,
@@ -22,7 +23,7 @@ import { writeAudit } from "./audit-service";
 
 export type ProductModelVisibility = "public" | "owner_only" | "restricted";
 export type ProductModelStatus = "draft" | "active" | "retired" | "archived";
-export type ProductSourceType = "need" | "idea" | "project" | "legacy_item";
+export type ProductSourceType = "need" | "idea" | "project" | "legacy_item" | "funding_campaign";
 export type ProductSourceRelation = "derived_from" | "validated_by" | "produced_by" | "migrated_from";
 export type ProductUnitStatus =
   | "registered"
@@ -423,6 +424,11 @@ async function sourceAccessible(
       eq(projectMemberships.status, "active"),
     )).limit(1);
     return Boolean(membership);
+  }
+  if (sourceType === "funding_campaign") {
+    const [row] = await tx.select({ ownerAccountId: fundingCampaigns.ownerAccountId, deletedAt: fundingCampaigns.deletedAt })
+      .from(fundingCampaigns).where(eq(fundingCampaigns.id, sourceId)).limit(1);
+    return Boolean(row && !row.deletedAt && row.ownerAccountId === accountId);
   }
   const [row] = await tx.select({ ownerId: items.ownerId }).from(items).where(eq(items.id, sourceId)).limit(1);
   return row?.ownerId === accountId;

@@ -170,6 +170,7 @@ function IdeaDetailContent() {
             {status === "draft" ? <PrimaryButton title="继续编辑和发布" onPress={() => router.push({ pathname: "/ideas/edit", params: { ideaId: String(ideaId) } } as never)} /> : null}
             {!['archived', 'converted'].includes(status) ? <PrimaryButton title="邀请协作者" variant="outline" onPress={() => router.push({ pathname: "/ideas/invite", params: { ideaId: String(ideaId), visibility } } as never)} /> : null}
             {visibility === "nda" ? <PrimaryButton title="查看 NDA" variant="outline" onPress={() => router.push({ pathname: "/ideas/nda", params: { ideaId: String(ideaId) } } as never)} /> : null}
+            {['published', 'collaborating'].includes(status) ? <PrimaryButton title="发起新品筹措" variant="outline" onPress={() => router.push({ pathname: "/funding/new", params: { sourceType: "idea", sourceId: String(ideaId) } } as never)} /> : null}
             {['published', 'collaborating'].includes(status) ? <PrimaryButton title="转为项目" loading={convertMutation.isPending} disabled={convertMutation.isPending} onPress={() => setConfirm("convert")} /> : null}
             {status === "converted" && idea.convertedProjectId ? <PrimaryButton title="进入项目详情" onPress={() => router.push(`/projects/${idea.convertedProjectId}` as never)} /> : null}
             {status !== "archived" ? <PrimaryButton title="归档创意" variant="danger" loading={archiveMutation.isPending} disabled={archiveMutation.isPending} onPress={() => setConfirm("archive")} /> : null}

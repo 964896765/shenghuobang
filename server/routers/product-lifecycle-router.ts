@@ -14,7 +14,7 @@ const requestId = z.string().trim().regex(/^[A-Za-z0-9._:-]{1,64}$/);
 const expectedAuthorizationVersion = z.number().int().positive().optional();
 const jsonObject = z.record(z.string(), z.unknown());
 const modelVisibility = z.enum(["public", "owner_only", "restricted"]);
-const sourceType = z.enum(["need", "idea", "project", "legacy_item"]);
+const sourceType = z.enum(["need", "idea", "project", "legacy_item", "funding_campaign"]);
 const sourceRelation = z.enum(["derived_from", "validated_by", "produced_by", "migrated_from"]);
 const unitStatus = z.enum([
   "registered",

@@ -10,6 +10,8 @@ import {
   complaints,
   conversations,
   engineerVerifications,
+  fundingCampaigns,
+  fundingPledges,
   identityTypes,
   identityVerifications,
   ideaAttachments,
@@ -72,7 +74,9 @@ const RESOURCE_FIELDS: Record<string, string[]> = {
   refund: ["id", "refundNo", "amount", "reason", "reviewReason", "failedReason", "status"],
   settlement: ["id", "settlementNo", "amount", "frozenReason", "status"],
   stored_file: ["id", "originalName", "storageKey", "mimeType", "sizeBytes", "status"],
-  idea: ["id", "creatorAccountId", "creatorIdentityId", "title", "summary", "description", "categoryCode", "tags", "visibility", "status", "coverFileId", "authorizationVersion", "publishedAt", "convertedProjectId", "createdAt", "updatedAt"],
+    idea: ["id", "creatorAccountId", "creatorIdentityId", "title", "summary", "description", "categoryCode", "tags", "visibility", "status", "coverFileId", "authorizationVersion", "publishedAt", "convertedProjectId", "createdAt", "updatedAt"],
+  funding_campaign: ["id", "publicCode", "ownerAccountId", "sourceType", "sourceId", "title", "summary", "description", "categoryCode", "coverUrl", "goalQuantity", "pledgedQuantity", "activePledgeCount", "evidence", "verificationSummary", "riskSummary", "visibility", "status", "authorizationVersion", "startsAt", "endsAt", "publishedAt", "closedAt", "createdAt", "updatedAt"],
+  funding_pledge: ["id", "campaignId", "supporterAccountId", "quantity", "note", "cityName", "status", "authorizationVersion", "withdrawnAt", "createdAt", "updatedAt"],
     idea_attachment: ["id", "ideaId", "fileId", "attachmentType", "confidentialityLevel", "sortOrder", "uploadedBy", "accessPolicyVersion", "originalName", "storageKey", "publicUrl", "permanentUrl", "mimeType", "sizeBytes", "status"],
   product_model: ["id", "publicCode", "ownerAccountId", "ownerOrganizationId", "name", "summary", "description", "categoryCode", "brandName", "modelCode", "versionLabel", "specifications", "visibility", "status", "authorizationVersion", "publishedAt", "retiredAt", "createdAt", "updatedAt"],
   product_unit: ["id", "productModelId", "linkedItemId", "currentOwnerAccountId", "publicCode", "serialNumber", "batchCode", "status", "trustLevel", "passportVisibility", "authorizationVersion", "manufacturedAt", "activatedAt", "retiredAt", "createdAt", "updatedAt"],
@@ -106,6 +110,16 @@ const ACCOUNT_SELF_CAPABILITIES = new Set([
   "idea.convert_to_project",
   "project.intention.register",
   "project.intention.withdraw",
+  "funding.campaign.create",
+  "funding.campaign.view_public",
+  "funding.campaign.view_owner",
+  "funding.campaign.edit",
+  "funding.campaign.publish",
+  "funding.campaign.close",
+  "funding.pledge.register",
+  "funding.pledge.withdraw",
+  "funding.pledge.view_self",
+  "funding.pledge.view_campaign",
   "product.model.create",
   "product.model.view_public",
   "product.model.view_owner",
@@ -507,6 +521,18 @@ export class DrizzleAuthorizationDataSource implements AuthorizationDataSource {
         assignments.push({ capabilityCode: request.capabilityCode, sourceType: "ACCOUNT_SELF", subjectId: request.accountId, status: "active", dataScope: "INVITED_RESOURCE", allowedFields: [] });
       }
     }
+    if (resource && (resource.resourceType === "funding_campaign" || resource.resourceType === "funding_pledge")) {
+      const publicCapabilities = new Set(["funding.campaign.view_public", "funding.pledge.register"]);
+      const isOwner = resource.ownerAccountId === request.accountId;
+      const isCampaignManager = resource.memberAccountIds?.includes(request.accountId) === true;
+      if (isOwner) {
+        assignments.push({ capabilityCode: request.capabilityCode, sourceType: "ACCOUNT_SELF", subjectId: request.accountId, status: "active", dataScope: "OWNED_RESOURCE", allowedFields: [] });
+      } else if (publicCapabilities.has(request.capabilityCode) && resource.public) {
+        assignments.push({ capabilityCode: request.capabilityCode, sourceType: "ACCOUNT_SELF", subjectId: request.accountId, status: "active", dataScope: "PUBLIC", allowedFields: [] });
+      } else if (isCampaignManager && request.capabilityCode === "funding.pledge.view_campaign") {
+        assignments.push({ capabilityCode: request.capabilityCode, sourceType: "ACCOUNT_SELF", subjectId: request.accountId, status: "active", dataScope: "INVITED_RESOURCE", allowedFields: [] });
+      }
+    }
     if (resource && (resource.resourceType === "product_model" || resource.resourceType === "product_unit")) {
       const publicCapabilities = new Set(["product.model.view_public", "product.unit.view_public", "product.passport.view_public"]);
       const isOwner = resource.ownerAccountId === request.accountId;
@@ -568,6 +594,40 @@ export class DrizzleAuthorizationDataSource implements AuthorizationDataSource {
       allowedStatuses: allowedStatuses(request.capabilityCode, status), confidentiality: "INTERNAL",
       availableFields: resourceFieldsFor(request.resourceType!), ...extra,
     });
+    if (request.resourceType === "funding_campaign") {
+      const [row] = await db.select({
+        ownerAccountId: fundingCampaigns.ownerAccountId,
+        status: fundingCampaigns.status,
+        visibility: fundingCampaigns.visibility,
+        authorizationVersion: fundingCampaigns.authorizationVersion,
+        deletedAt: fundingCampaigns.deletedAt,
+      }).from(fundingCampaigns).where(eq(fundingCampaigns.id, id)).limit(1);
+      if (!row || row.deletedAt) return null;
+      const isPublic = row.visibility === "public" && ["active", "succeeded", "failed", "cancelled", "closed"].includes(row.status);
+      return base(row.status, {
+        ownerAccountId: row.ownerAccountId,
+        public: isPublic,
+        confidentiality: isPublic ? "PUBLIC" : "INTERNAL",
+        version: row.authorizationVersion,
+      });
+    }
+    if (request.resourceType === "funding_pledge") {
+      const [row] = await db.select({
+        supporterAccountId: fundingPledges.supporterAccountId,
+        campaignOwnerAccountId: fundingCampaigns.ownerAccountId,
+        status: fundingPledges.status,
+        authorizationVersion: fundingPledges.authorizationVersion,
+      }).from(fundingPledges).innerJoin(fundingCampaigns, eq(fundingCampaigns.id, fundingPledges.campaignId))
+        .where(eq(fundingPledges.id, id)).limit(1);
+      if (!row) return null;
+      return base(row.status, {
+        ownerAccountId: row.supporterAccountId,
+        memberAccountIds: [row.campaignOwnerAccountId],
+        public: false,
+        confidentiality: "INTERNAL",
+        version: row.authorizationVersion,
+      });
+    }
     if (request.resourceType === "product_model") {
       const [row] = await db.select({
         id: productModels.id,
