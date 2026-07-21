@@ -2764,3 +2764,246 @@ export const fundingCampaignEvents = mysqlTable("funding_campaign_events",
   }),
 );
 export type FundingCampaignEvent = typeof fundingCampaignEvents.$inferSelect;
+
+// ============ V4 统一内容创作、发现与可信业务关联 ============
+
+export const contentPosts = mysqlTable("content_posts",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    publicCode: varchar("publicCode", { length: 36 }).notNull(),
+    authorAccountId: int("authorAccountId").notNull().references(() => users.id),
+    authorIdentityId: int("authorIdentityId").references(() => businessIdentities.id),
+    organizationId: int("organizationId").references(() => organizations.id),
+    contentType: mysqlEnum("contentType", ["post", "video", "article", "question", "product_review", "tutorial", "idea_progress", "funding_update", "repair_case"]).notNull(),
+    title: varchar("title", { length: 180 }).notNull(),
+    summary: varchar("summary", { length: 500 }),
+    body: text("body").notNull(),
+    locationLabel: varchar("locationLabel", { length: 100 }),
+    visibility: mysqlEnum("visibility", ["public", "followers", "private"]).default("private").notNull(),
+    sourceType: mysqlEnum("sourceType", ["personal_experience", "organization_official", "service_case", "platform_verified", "external_public", "ai_assisted", "unverified_claim"]).default("personal_experience").notNull(),
+    sourceStatement: varchar("sourceStatement", { length: 500 }),
+    aiAssisted: boolean("aiAssisted").default(false).notNull(),
+    aiConfirmedAt: timestamp("aiConfirmedAt"),
+    allowComments: boolean("allowComments").default(true).notNull(),
+    status: mysqlEnum("status", ["draft", "ready_to_publish", "reviewing", "published", "rejected", "recommendation_limited", "unpublished", "author_deleted", "platform_banned"]).default("draft").notNull(),
+    moderationReason: varchar("moderationReason", { length: 500 }),
+    authorizationVersion: int("authorizationVersion").default(1).notNull(),
+    createdRequestId: varchar("createdRequestId", { length: 64 }).notNull(),
+    lastRequestId: varchar("lastRequestId", { length: 64 }).notNull(),
+    publishedAt: timestamp("publishedAt"),
+    deletedAt: timestamp("deletedAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({
+    publicCodeUnique: uniqueIndex("content_posts_public_code_uq").on(table.publicCode),
+    createdRequestUnique: uniqueIndex("content_posts_created_request_uq").on(table.createdRequestId),
+    lastRequestUnique: uniqueIndex("content_posts_last_request_uq").on(table.lastRequestId),
+    authorStatusIndex: index("content_posts_author_status_idx").on(table.authorAccountId, table.status, table.updatedAt),
+    discoveryIndex: index("content_posts_discovery_idx").on(table.status, table.visibility, table.publishedAt),
+    typeDiscoveryIndex: index("content_posts_type_discovery_idx").on(table.contentType, table.status, table.publishedAt),
+    locationIndex: index("content_posts_location_idx").on(table.locationLabel, table.status, table.publishedAt),
+  }),
+);
+export type ContentPost = typeof contentPosts.$inferSelect;
+export type InsertContentPost = typeof contentPosts.$inferInsert;
+
+export const contentMedia = mysqlTable("content_media",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    postId: int("postId").notNull().references(() => contentPosts.id),
+    fileId: int("fileId").notNull().references(() => storedFiles.id),
+    mediaType: mysqlEnum("mediaType", ["image", "video"]).notNull(),
+    purpose: mysqlEnum("purpose", ["cover", "body"]).default("body").notNull(),
+    sortOrder: int("sortOrder").default(0).notNull(),
+    status: mysqlEnum("status", ["active", "removed"]).default("active").notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    postFileUnique: uniqueIndex("content_media_post_file_uq").on(table.postId, table.fileId),
+    postOrderIndex: index("content_media_post_order_idx").on(table.postId, table.status, table.sortOrder),
+  }),
+);
+
+export const contentRelations = mysqlTable("content_relations",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    postId: int("postId").notNull().references(() => contentPosts.id),
+    relationType: mysqlEnum("relationType", ["demand", "idea", "funding_project", "product", "product_unit", "listing", "repair", "service", "donation", "recycling", "account", "organization"]).notNull(),
+    relationId: int("relationId").notNull(),
+    relationLabel: varchar("relationLabel", { length: 180 }),
+    createdByAccountId: int("createdByAccountId").notNull().references(() => users.id),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    relationUnique: uniqueIndex("content_relations_post_relation_uq").on(table.postId, table.relationType, table.relationId),
+    targetIndex: index("content_relations_target_idx").on(table.relationType, table.relationId),
+  }),
+);
+
+export const contentTags = mysqlTable("content_tags",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    normalizedName: varchar("normalizedName", { length: 64 }).notNull(),
+    displayName: varchar("displayName", { length: 64 }).notNull(),
+    status: mysqlEnum("status", ["active", "disabled"]).default("active").notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({ nameUnique: uniqueIndex("content_tags_normalized_name_uq").on(table.normalizedName) }),
+);
+
+export const contentTagLinks = mysqlTable("content_tag_links",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    postId: int("postId").notNull().references(() => contentPosts.id),
+    tagId: int("tagId").notNull().references(() => contentTags.id),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    linkUnique: uniqueIndex("content_tag_links_post_tag_uq").on(table.postId, table.tagId),
+    tagIndex: index("content_tag_links_tag_idx").on(table.tagId, table.postId),
+  }),
+);
+
+export const contentInteractions = mysqlTable("content_interactions",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    postId: int("postId").notNull().references(() => contentPosts.id),
+    accountId: int("accountId").notNull().references(() => users.id),
+    interactionType: mysqlEnum("interactionType", ["like", "favorite", "share", "view", "product_click", "listing_click", "idea_click"]).notNull(),
+    active: boolean("active").default(true).notNull(),
+    requestId: varchar("requestId", { length: 64 }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({
+    accountInteractionUnique: uniqueIndex("content_interactions_account_type_uq").on(table.postId, table.accountId, table.interactionType),
+    requestUnique: uniqueIndex("content_interactions_request_uq").on(table.requestId),
+    postTypeIndex: index("content_interactions_post_type_idx").on(table.postId, table.interactionType, table.active),
+  }),
+);
+
+export const contentComments = mysqlTable("content_comments",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    postId: int("postId").notNull().references(() => contentPosts.id),
+    authorAccountId: int("authorAccountId").notNull().references(() => users.id),
+    parentCommentId: int("parentCommentId"),
+    body: text("body").notNull(),
+    status: mysqlEnum("status", ["published", "author_deleted", "platform_removed"]).default("published").notNull(),
+    requestId: varchar("requestId", { length: 64 }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    deletedAt: timestamp("deletedAt"),
+  },
+  (table) => ({
+    requestUnique: uniqueIndex("content_comments_request_uq").on(table.requestId),
+    postTimeIndex: index("content_comments_post_time_idx").on(table.postId, table.status, table.createdAt),
+  }),
+);
+
+export const contentFollows = mysqlTable("content_follows",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    followerAccountId: int("followerAccountId").notNull().references(() => users.id),
+    followedAccountId: int("followedAccountId").notNull().references(() => users.id),
+    active: boolean("active").default(true).notNull(),
+    requestId: varchar("requestId", { length: 64 }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({
+    followUnique: uniqueIndex("content_follows_pair_uq").on(table.followerAccountId, table.followedAccountId),
+    requestUnique: uniqueIndex("content_follows_request_uq").on(table.requestId),
+    followerIndex: index("content_follows_follower_idx").on(table.followerAccountId, table.active),
+    followedIndex: index("content_follows_followed_idx").on(table.followedAccountId, table.active),
+  }),
+);
+
+export const contentReports = mysqlTable("content_reports",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    postId: int("postId").notNull().references(() => contentPosts.id),
+    reporterAccountId: int("reporterAccountId").notNull().references(() => users.id),
+    reasonCode: varchar("reasonCode", { length: 64 }).notNull(),
+    detail: varchar("detail", { length: 1000 }),
+    status: mysqlEnum("status", ["submitted", "reviewing", "resolved", "dismissed"]).default("submitted").notNull(),
+    requestId: varchar("requestId", { length: 64 }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    resolvedAt: timestamp("resolvedAt"),
+  },
+  (table) => ({
+    reporterPostUnique: uniqueIndex("content_reports_reporter_post_uq").on(table.postId, table.reporterAccountId),
+    requestUnique: uniqueIndex("content_reports_request_uq").on(table.requestId),
+    statusIndex: index("content_reports_status_idx").on(table.status, table.createdAt),
+  }),
+);
+
+export const contentModerationRecords = mysqlTable("content_moderation_records",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    postId: int("postId").notNull().references(() => contentPosts.id),
+    actorAccountId: int("actorAccountId").references(() => users.id),
+    moderationType: mysqlEnum("moderationType", ["automated", "manual"]).notNull(),
+    decision: mysqlEnum("decision", ["approved", "rejected", "limited", "banned"]).notNull(),
+    reasonCode: varchar("reasonCode", { length: 64 }).notNull(),
+    detail: json("detail").$type<Record<string, unknown>>().notNull(),
+    requestId: varchar("requestId", { length: 64 }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    requestUnique: uniqueIndex("content_moderation_records_request_uq").on(table.requestId),
+    postTimeIndex: index("content_moderation_records_post_time_idx").on(table.postId, table.createdAt),
+  }),
+);
+
+export const contentMetrics = mysqlTable("content_metrics", {
+  postId: int("postId").primaryKey().references(() => contentPosts.id),
+  viewCount: int("viewCount").default(0).notNull(),
+  likeCount: int("likeCount").default(0).notNull(),
+  favoriteCount: int("favoriteCount").default(0).notNull(),
+  commentCount: int("commentCount").default(0).notNull(),
+  shareCount: int("shareCount").default(0).notNull(),
+  productClickCount: int("productClickCount").default(0).notNull(),
+  listingClickCount: int("listingClickCount").default(0).notNull(),
+  ideaClickCount: int("ideaClickCount").default(0).notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export const contentDrafts = mysqlTable("content_drafts",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    postId: int("postId").notNull().references(() => contentPosts.id),
+    versionNo: int("versionNo").notNull(),
+    snapshot: json("snapshot").$type<Record<string, unknown>>().notNull(),
+    savedByAccountId: int("savedByAccountId").notNull().references(() => users.id),
+    requestId: varchar("requestId", { length: 64 }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    versionUnique: uniqueIndex("content_drafts_post_version_uq").on(table.postId, table.versionNo),
+    requestUnique: uniqueIndex("content_drafts_request_uq").on(table.requestId),
+  }),
+);
+
+export const creatorProfiles = mysqlTable("creator_profiles",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    accountId: int("accountId").notNull().references(() => users.id),
+    displayName: varchar("displayName", { length: 100 }),
+    bio: varchar("bio", { length: 500 }),
+    verificationLabel: varchar("verificationLabel", { length: 100 }),
+    publishedCount: int("publishedCount").default(0).notNull(),
+    followerCount: int("followerCount").default(0).notNull(),
+    followingCount: int("followingCount").default(0).notNull(),
+    totalViewCount: int("totalViewCount").default(0).notNull(),
+    totalLikeCount: int("totalLikeCount").default(0).notNull(),
+    totalFavoriteCount: int("totalFavoriteCount").default(0).notNull(),
+    totalCommentCount: int("totalCommentCount").default(0).notNull(),
+    productClickCount: int("productClickCount").default(0).notNull(),
+    ideaClickCount: int("ideaClickCount").default(0).notNull(),
+    listingClickCount: int("listingClickCount").default(0).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({ accountUnique: uniqueIndex("creator_profiles_account_uq").on(table.accountId) }),
+);

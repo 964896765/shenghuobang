@@ -12,7 +12,7 @@ import { authorizeOrThrow } from "../authorization";
 
 const scanner = new DevelopmentFileScanner();
 const privacyLevels = new Set(["public", "business", "sensitive", "high_sensitive"]);
-const relatedTypes = new Set(["item", "listing"]);
+const relatedTypes = new Set(["item", "listing", "content_post"]);
 function clientIp(req: Request) { return String(req.headers["x-forwarded-for"] ?? req.socket.remoteAddress ?? "").split(",")[0].trim(); }
 function base64Buffer(value: string) {
   const compact = value.replace(/\s/g, "");
@@ -61,8 +61,8 @@ export function registerFileRoutes(app: Express) {
     }
   });
 
-  // Marketplace images are intentionally public. They still pass the existing
-  // file signature, MIME/header, size and development scanner checks on upload.
+  // Marketplace and published-content media are intentionally public. They
+  // still pass signature, MIME/header, size and scanner checks on upload.
   app.get("/api/files/:id/public", async (req, res) => {
     try {
       const file = await db.getStoredFile(Number(req.params.id));
@@ -70,7 +70,7 @@ export function registerFileRoutes(app: Express) {
         !file ||
         file.status !== "available" ||
         file.privacyLevel !== "public" ||
-        !file.mimeType.startsWith("image/") ||
+        !(file.mimeType.startsWith("image/") || file.mimeType.startsWith("video/")) ||
         ["pending", "rejected"].includes(file.virusScanStatus)
       ) {
         return res.status(404).json({ error: "图片不存在或不可用" });

@@ -22,6 +22,7 @@ import { prototypeAcceptancesRouter, projectIntentionsRouter } from "./routers/p
 import { designVersionsRouter, prototypeMilestonesRouter } from "./routers/project-design-prototype-router";
 import { fundingCampaignsRouter, fundingPledgesRouter } from "./routers/funding-campaign-router";
 import { productModelsRouter, productUnitsRouter } from "./routers/product-lifecycle-router";
+import { contentRouter } from "./routers/content-router";
 
 import * as verificationService from "./services/verification-service";
 import { listMyCertifications, listMyIdentities, submitIdentityCertification, updateAccountAndPublicProfile } from "./services/identity-service";
@@ -182,6 +183,7 @@ export const appRouter = router({
   fundingPledges: fundingPledgesRouter,
   productModels: productModelsRouter,
   productUnits: productUnitsRouter,
+  content: contentRouter,
   location: router({
     me: protectedProcedure.query(async ({ ctx }) => {
       const preference = await db.getLocationPreference(ctx.user.id);

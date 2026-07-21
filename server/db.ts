@@ -49,6 +49,7 @@ import {
   notificationDeliveries,
   devicePushTokens,
   storedFiles,
+  contentPosts,
   fileAccessLogs,
   auditLogs,
   reviews,
@@ -2410,6 +2411,11 @@ export async function canManageRelatedFile(userId: number, role: string, related
     const db = await requireDb();
     const rows = await db.select({ sellerId: listings.sellerId }).from(listings).where(eq(listings.id, relatedEntityId)).limit(1);
     return rows[0]?.sellerId === userId;
+  }
+  if (relatedEntityType === "content_post") {
+    const db = await requireDb();
+    const rows = await db.select({ authorAccountId: contentPosts.authorAccountId }).from(contentPosts).where(eq(contentPosts.id, relatedEntityId)).limit(1);
+    return rows[0]?.authorAccountId === userId;
   }
   return false;
 }
