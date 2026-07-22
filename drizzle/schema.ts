@@ -832,29 +832,56 @@ export const notifications = mysqlTable("notifications",
 export type Notification = typeof notifications.$inferSelect;
 
 /** 评价 */
-export const reviews = mysqlTable("reviews", {
-  id: int("id").autoincrement().primaryKey(),
-  orderId: int("orderId").notNull(),
-  reviewerId: int("reviewerId").notNull(),
-  revieweeId: int("revieweeId").notNull(),
-  overallRating: int("overallRating").notNull(), // 1-5
-  dimensions: json("dimensions").$type<Record<string, number>>(),
-  content: text("content"),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+export const reviews = mysqlTable(
+  "reviews",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    orderId: int("orderId").notNull(),
+    reviewerId: int("reviewerId").notNull(),
+    revieweeId: int("revieweeId").notNull(),
+    overallRating: int("overallRating").notNull(), // 1-5
+    dimensions: json("dimensions").$type<Record<string, number>>(),
+    tags: json("tags").$type<string[]>(),
+    imageFileIds: json("imageFileIds").$type<number[]>(),
+    content: text("content"),
+    businessSource: varchar("businessSource", { length: 64 }).default("order").notNull(),
+    impactDimension: varchar("impactDimension", { length: 64 }).default("trade_reliability").notNull(),
+    requestId: varchar("requestId", { length: 64 }),
+    reply: text("reply"),
+    repliedBy: int("repliedBy"),
+    repliedAt: timestamp("repliedAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    orderReviewerUnique: uniqueIndex("reviews_order_reviewer_uq").on(table.orderId, table.reviewerId),
+    reviewerRequestUnique: uniqueIndex("reviews_reviewer_request_uq").on(table.reviewerId, table.requestId),
+    revieweeCreatedIndex: index("reviews_reviewee_created_idx").on(table.revieweeId, table.createdAt),
+  }),
+);
 export type Review = typeof reviews.$inferSelect;
 
 /** 信用事件 */
-export const creditEvents = mysqlTable("credit_events", {
-  id: int("id").autoincrement().primaryKey(),
-  userId: int("userId").notNull(),
-  eventType: varchar("eventType", { length: 64 }).notNull(),
-  scoreChange: int("scoreChange").default(0).notNull(),
-  reason: varchar("reason", { length: 255 }),
-  refType: varchar("refType", { length: 32 }),
-  refId: int("refId"),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+export const creditEvents = mysqlTable(
+  "credit_events",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    userId: int("userId").notNull(),
+    actorAccountId: int("actorAccountId"),
+    eventType: varchar("eventType", { length: 64 }).notNull(),
+    scoreChange: int("scoreChange").default(0).notNull(),
+    reason: varchar("reason", { length: 255 }),
+    businessSource: varchar("businessSource", { length: 64 }).default("system").notNull(),
+    impactDimension: varchar("impactDimension", { length: 64 }).default("general").notNull(),
+    refType: varchar("refType", { length: 32 }),
+    refId: int("refId"),
+    requestId: varchar("requestId", { length: 64 }),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    userRequestUnique: uniqueIndex("credit_events_user_request_uq").on(table.userId, table.requestId),
+    userCreatedIndex: index("credit_events_user_created_idx").on(table.userId, table.createdAt),
+  }),
+);
 export type CreditEvent = typeof creditEvents.$inferSelect;
 
 // ============ V3.2 物品生命周期 ============

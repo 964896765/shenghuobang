@@ -54,6 +54,7 @@ import {
   auditLogs,
   reviews,
   creditEvents,
+  orderLineItems,
   settlements,
   settlementItems,
 } from "../drizzle/schema";
@@ -2045,6 +2046,8 @@ export async function completeOrderTransaction(orderId: number, buyerId: number)
     await tx.update(orders).set({ status:"completed", completedAt:new Date() }).where(eq(orders.id, orderId));
     await tx.insert(orderStatusLogs).values({ orderId, fromStatus:"pending_acceptance", toStatus:"completed", note:"买家确认收货,订单完成" });
     if (order.orderType === "listing") {
+      const commerceLines = await tx.select({ id: orderLineItems.id }).from(orderLineItems).where(eq(orderLineItems.orderId, orderId)).limit(1);
+      if (commerceLines.length) return order;
       const listingRows=await tx.select().from(listings).where(eq(listings.id, order.refId)).for("update").limit(1);
       const listing=listingRows[0];
       if (listing) {
@@ -2475,6 +2478,106 @@ export async function listNotificationFailures(limit = 100) {
 export async function createReview(data: typeof reviews.$inferInsert) {
   const db = await requireDb();
   await db.insert(reviews).values(data);
+}
+
+export async function createOrderReviewTransaction(input: {
+  orderId: number;
+  reviewerId: number;
+  overallRating: number;
+  dimensions?: Record<string, number>;
+  tags: string[];
+  imageFileIds: number[];
+  content?: string;
+  requestId: string;
+}) {
+  const database = await requireDb();
+  return database.transaction(async (tx) => {
+    const duplicateRows = await tx.select().from(reviews)
+      .where(and(eq(reviews.reviewerId, input.reviewerId), eq(reviews.requestId, input.requestId)))
+      .limit(1);
+    if (duplicateRows[0]) return { review: duplicateRows[0], duplicate: true };
+
+    const orderRows = await tx.select().from(orders).where(eq(orders.id, input.orderId)).for("update").limit(1);
+    const order = orderRows[0];
+    if (!order) throw new Error("订单不存在");
+    if (order.status !== "completed") throw new Error("订单完成后才能评价");
+    const isBuyer = order.buyerId === input.reviewerId;
+    const isSeller = order.sellerId === input.reviewerId;
+    if (!isBuyer && !isSeller) throw new Error("你不是该订单参与方");
+    if ((isBuyer && order.buyerReviewed) || (isSeller && order.sellerReviewed)) throw new Error("你已评价过该订单");
+
+    if (input.imageFileIds.length) {
+      const files = await tx.select().from(storedFiles).where(inArray(storedFiles.id, input.imageFileIds));
+      if (files.length !== input.imageFileIds.length || files.some((file) => file.ownerId !== input.reviewerId || file.status !== "available" || file.virusScanStatus !== "clean" || !file.mimeType.startsWith("image/"))) {
+        throw new Error("评价图片不存在、不可用或尚未通过安全扫描");
+      }
+    }
+
+    const revieweeId = isBuyer ? order.sellerId : order.buyerId;
+    const impactDimension = order.orderType === "project" ? "service_reliability" : "trade_reliability";
+    const result = await tx.insert(reviews).values({
+      orderId: order.id,
+      reviewerId: input.reviewerId,
+      revieweeId,
+      overallRating: input.overallRating,
+      dimensions: input.dimensions,
+      tags: input.tags,
+      imageFileIds: input.imageFileIds,
+      content: input.content,
+      businessSource: `order:${order.orderType}`,
+      impactDimension,
+      requestId: input.requestId,
+    });
+    const reviewId = Number(result[0].insertId);
+    await tx.update(orders).set(isBuyer ? { buyerReviewed: true } : { sellerReviewed: true }).where(eq(orders.id, order.id));
+    const scoreChange = input.overallRating >= 4 ? 1 : input.overallRating <= 2 ? -2 : 0;
+    await tx.insert(creditEvents).values({
+      userId: revieweeId,
+      actorAccountId: input.reviewerId,
+      eventType: "review_received",
+      scoreChange,
+      reason: `收到${input.overallRating}星评价`,
+      businessSource: `order:${order.orderType}`,
+      impactDimension,
+      refType: "review",
+      refId: reviewId,
+      requestId: `credit:${input.requestId}`,
+    });
+    if (scoreChange) {
+      await tx.update(userProfiles)
+        .set({ creditScore: sql`GREATEST(${userProfiles.creditScore} + ${scoreChange}, 0)` })
+        .where(eq(userProfiles.userId, revieweeId));
+    }
+    await tx.insert(auditLogs).values({
+      actorId: input.reviewerId,
+      actorRole: "user",
+      action: "review.order.create",
+      resourceType: "review",
+      resourceId: String(reviewId),
+      detail: { orderId: order.id, revieweeId, scoreChange, impactDimension, imageCount: input.imageFileIds.length },
+    });
+    const reviewRows = await tx.select().from(reviews).where(eq(reviews.id, reviewId)).limit(1);
+    return { review: reviewRows[0]!, duplicate: false };
+  });
+}
+
+export async function listOrderReviews(orderId: number) {
+  const database = await requireDb();
+  return database.select().from(reviews).where(eq(reviews.orderId, orderId)).orderBy(asc(reviews.createdAt));
+}
+
+export async function replyToReviewTransaction(input: { reviewId: number; actorId: number; reply: string }) {
+  const database = await requireDb();
+  return database.transaction(async (tx) => {
+    const rows = await tx.select().from(reviews).where(eq(reviews.id, input.reviewId)).for("update").limit(1);
+    const review = rows[0];
+    if (!review) throw new Error("评价不存在");
+    if (review.revieweeId !== input.actorId) throw new Error("只有被评价方可以回复");
+    if (review.reply) throw new Error("该评价已经回复");
+    await tx.update(reviews).set({ reply: input.reply, repliedBy: input.actorId, repliedAt: new Date() }).where(eq(reviews.id, review.id));
+    await tx.insert(auditLogs).values({ actorId: input.actorId, actorRole: "user", action: "review.reply", resourceType: "review", resourceId: String(review.id) });
+    return { ...review, reply: input.reply, repliedBy: input.actorId, repliedAt: new Date() };
+  });
 }
 
 export async function listReviewsForUser(userId: number) {

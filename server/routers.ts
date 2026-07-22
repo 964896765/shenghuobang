@@ -1435,9 +1435,10 @@ export const appRouter = router({
       if (!order) throw new Error("订单不存在");
       if (order.buyerId !== ctx.user.id && order.sellerId !== ctx.user.id) throw new Error("你不是该订单参与方");
       const logs = await db.listOrderLogs(input.id);
+      const reviewList = await db.listOrderReviews(input.id);
       const profiles = await db.getProfilesByUserIds([order.buyerId, order.sellerId]);
       const profileMap = Object.fromEntries(profiles.map((p) => [p.userId, { nickname: p.nickname }]));
-      return { order, logs, profileMap, myRole: order.buyerId === ctx.user.id ? ("buyer" as const) : ("seller" as const) };
+      return { order, logs, reviews: reviewList, profileMap, myRole: order.buyerId === ctx.user.id ? ("buyer" as const) : ("seller" as const) };
     }),
     pay: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
       const order = await db.getOrder(input.id);
@@ -1471,11 +1472,15 @@ export const appRouter = router({
       const order = await db.completeOrderTransaction(input.id, ctx.user.id);
       await db.addCreditEvent({
         userId: order.sellerId,
+        actorAccountId: ctx.user.id,
         eventType: "order_completed",
         scoreChange: 2,
         reason: "订单顺利完成",
+        businessSource: `order:${order.orderType}`,
+        impactDimension: "fulfillment_reliability",
         refType: "order",
         refId: order.id,
+        requestId: `order-completed:${order.id}`,
       });
       await db.createNotification({
         userId: order.sellerId,
@@ -1494,36 +1499,29 @@ export const appRouter = router({
           id: z.number(),
           overallRating: z.number().int().min(1).max(5),
           dimensions: z.record(z.string(), z.number().int().min(1).max(5)).optional(),
+          tags: z.array(z.string().trim().min(1).max(32)).max(8).default([]),
+          imageFileIds: z.array(z.number().int().positive()).max(6).default([]),
           content: z.string().max(500).optional(),
+          requestId: z.string().min(8).max(64),
         }),
       )
       .mutation(async ({ ctx, input }) => {
-        const order = await db.getOrder(input.id);
-        if (!order) throw new Error("订单不存在");
-        if (order.status !== "completed") throw new Error("订单完成后才能评价");
-        const isBuyer = order.buyerId === ctx.user.id;
-        const isSeller = order.sellerId === ctx.user.id;
-        if (!isBuyer && !isSeller) throw new Error("你不是该订单参与方");
-        if (isBuyer && order.buyerReviewed) throw new Error("你已评价过该订单");
-        if (isSeller && order.sellerReviewed) throw new Error("你已评价过该订单");
-        const revieweeId = isBuyer ? order.sellerId : order.buyerId;
-        await db.createReview({
-          orderId: order.id,
+        const result = await db.createOrderReviewTransaction({
+          orderId: input.id,
           reviewerId: ctx.user.id,
-          revieweeId,
           overallRating: input.overallRating,
           dimensions: input.dimensions,
+          tags: input.tags,
+          imageFileIds: input.imageFileIds,
           content: input.content,
+          requestId: input.requestId,
         });
-        await db.updateOrder(order.id, isBuyer ? { buyerReviewed: true } : { sellerReviewed: true });
-        await db.addCreditEvent({
-          userId: revieweeId,
-          eventType: "review_received",
-          scoreChange: input.overallRating >= 4 ? 1 : input.overallRating <= 2 ? -2 : 0,
-          reason: `收到${input.overallRating}星评价`,
-          refType: "order",
-          refId: order.id,
-        });
+        return { success: true, reviewId: result.review.id, duplicate: result.duplicate };
+      }),
+    replyReview: protectedProcedure
+      .input(z.object({ reviewId: z.number().int().positive(), reply: z.string().trim().min(2).max(500) }))
+      .mutation(async ({ ctx, input }) => {
+        await db.replyToReviewTransaction({ ...input, actorId: ctx.user.id });
         return { success: true };
       }),
   }),

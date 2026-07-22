@@ -41,7 +41,7 @@ describe("统一 App 导航契约", () => {
 
   it("统一处理未登录、无权限和功能关闭", () => {
     const protectedEntry = HOME_ENTRIES.find((item) => item.id === "needs")!;
-    const disabledEntry = HOME_ENTRIES.find((item) => item.id === "repair")!;
+    const disabledEntry = { ...HOME_ENTRIES.find((item) => item.id === "repair")!, enabled: false };
     const engineerEntry = ROLE_ENTRIES.find((item) => item.id === "designer")!;
     expect(resolveEntryAccess(protectedEntry, { role: "user", isAuthenticated: false })).toBe("login_required");
     expect(resolveEntryAccess(disabledEntry, { role: "user", isAuthenticated: true })).toBe("feature_disabled");
