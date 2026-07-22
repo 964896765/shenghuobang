@@ -180,6 +180,9 @@ export const productUnitsRouter = router({
     publicCode: z.string().trim().min(1).max(40),
   }).strict()).query(({ input }) => call(() => productLifecycleService.publicUnitDetail(input.publicCode))),
 
+  resolveLookup: publicProcedure.input(z.object({ value: z.string().trim().min(1).max(128) }).strict())
+    .mutation(({ input }) => call(() => productLifecycleService.resolvePublicUnitLookup(input.value))),
+
   detail: protectedProcedure.input(z.object({ productUnitId: positiveId }).strict())
     .query(({ ctx, input }) => call(() => productLifecycleService.ownerUnitDetail(ctx.user.id, input.productUnitId))),
 

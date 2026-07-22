@@ -61,7 +61,8 @@
     "test:v33-b3-1-acceptance-intent-backend": "tsx scripts/test-v33-b3-1-acceptance-intent-backend.ts",
     "test:v33-b3-2-acceptance-intent-app": "tsx scripts/test-v33-b3-2-acceptance-intent-app.ts",
     "test:v4-product-core:mysql": "tsx scripts/test-v4-product-core-integration.ts",
-    "test:v4-funding:mysql": "tsx scripts/test-v4-funding-integration.ts"
+    "test:v4-funding:mysql": "tsx scripts/test-v4-funding-integration.ts",
+    "test:v4-runnable:mysql": "tsx scripts/test-v4-runnable-integration.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1085.0",

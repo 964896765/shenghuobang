@@ -69,7 +69,12 @@ let _db: ReturnType<typeof drizzle> | null = null;
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
-      _db = drizzle(process.env.DATABASE_URL);
+      // Keep TIMESTAMP serialization and hydration deterministic. Passport event
+      // hashes include their occurrence time, so relying on the host timezone can
+      // make a value hash differently after a database round trip.
+      const databaseUrl = new URL(process.env.DATABASE_URL);
+      databaseUrl.searchParams.set("timezone", "Z");
+      _db = drizzle(databaseUrl.toString());
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;

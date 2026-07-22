@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
   assertProductUnitTransition,
   canonicalJson,
+  normalizePassportOccurredAt,
   productPassportEventHash,
   verifyProductPassportEventChain,
   ProductLifecycleServiceError,
@@ -76,6 +77,11 @@ describe("V4 产品护照哈希链", () => {
     const baseline = productPassportEventHash(event);
     expect(productPassportEventHash({ ...event, previousEventHash: "b".repeat(64) })).not.toBe(baseline);
     expect(productPassportEventHash({ ...event, detail: { ...event.detail, score: 95 } })).not.toBe(baseline);
+  });
+
+  it("normalizes event time to the precision persisted by MySQL", () => {
+    expect(normalizePassportOccurredAt(new Date("2026-07-21T01:02:03.987Z")).toISOString())
+      .toBe("2026-07-21T01:02:03.000Z");
   });
 });
 

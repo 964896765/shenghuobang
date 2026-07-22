@@ -263,6 +263,12 @@ export function productPassportEventHash(input: ProductPassportHashInput): strin
   }), "utf8").digest("hex");
 }
 
+export function normalizePassportOccurredAt(value: Date): Date {
+  const normalized = new Date(value);
+  normalized.setUTCMilliseconds(0);
+  return normalized;
+}
+
 export function verifyProductPassportEventChain(
   events: readonly (typeof productPassportEvents.$inferSelect)[],
 ): boolean {
@@ -492,7 +498,11 @@ async function appendPassportEvent(
     .limit(1);
   const sequenceNumber = (last?.sequenceNumber ?? 0) + 1;
   const previousEventHash = last?.eventHash ?? null;
-  const hashInput = { ...input, sequenceNumber, previousEventHash };
+  // MySQL TIMESTAMP columns in the current schema have second precision. Hash
+  // the exact value that can be persisted so a fresh event with milliseconds
+  // still verifies after it is read back.
+  const occurredAt = normalizePassportOccurredAt(input.occurredAt);
+  const hashInput = { ...input, sequenceNumber, previousEventHash, occurredAt };
   const eventHash = productPassportEventHash(hashInput);
   const result = await tx.insert(productPassportEvents).values({
     productUnitId: input.productUnitId,
@@ -509,7 +519,7 @@ async function appendPassportEvent(
     detail: input.detail,
     previousEventHash,
     eventHash,
-    occurredAt: input.occurredAt,
+    occurredAt,
   });
   const [created] = await tx.select().from(productPassportEvents)
     .where(eq(productPassportEvents.id, Number(result[0].insertId))).limit(1);
@@ -1233,6 +1243,22 @@ export class ProductLifecycleService {
       events: visibleEvents.map(publicPassportEventView),
       integrity: passportIntegrity(allEvents, visibleEvents.length),
     };
+  }
+
+  async resolvePublicUnitLookup(value: string) {
+    const lookup = cleanText(value, "PRODUCT_UNIT_PUBLIC_CODE_INVALID", 128);
+    const db = await requireDb();
+    const [row] = await db.select({ publicCode: productUnits.publicCode }).from(productUnits)
+      .innerJoin(productModels, eq(productModels.id, productUnits.productModelId))
+      .where(and(
+        or(eq(productUnits.publicCode, lookup), eq(productUnits.serialNumber, lookup)),
+        eq(productUnits.passportVisibility, "public"),
+        eq(productModels.visibility, "public"),
+        eq(productModels.status, "active"),
+        isNull(productModels.deletedAt),
+      )).limit(1);
+    if (!row) throw new ProductLifecycleServiceError("PRODUCT_UNIT_NOT_FOUND");
+    return row;
   }
 }
 
