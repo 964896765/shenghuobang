@@ -25,6 +25,7 @@ import { productModelsRouter, productUnitsRouter } from "./routers/product-lifec
 import { contentRouter } from "./routers/content-router";
 import { commerceRouter } from "./routers/commerce-router";
 import { commerceService } from "./services/commerce-service";
+import { confirmDeliveryTransaction } from "./services/order-service";
 
 import * as verificationService from "./services/verification-service";
 import { listMyCertifications, listMyIdentities, submitIdentityCertification, updateAccountAndPublicProfile } from "./services/identity-service";
@@ -1312,6 +1313,7 @@ export const appRouter = router({
         z.object({
           title: z.string().min(2).max(100),
           category: z.string().max(64).default("家电"),
+          itemId: z.number().int().positive().optional(),
           conditionDesc: z.string().max(1000).optional(),
           expectedPrice: z.number().int().min(0).nullable().optional(),
         }),
@@ -1366,6 +1368,7 @@ export const appRouter = router({
         const profile = await db.ensureProfile(ctx.user.id);
         const merchant = await db.getMerchantByUserId(ctx.user.id);
         const request = await db.getRecyclingRequest(input.requestId);
+        if (request?.userId === ctx.user.id) throw new Error("A merchant cannot quote their own recycling request");
         if (!request) throw new Error("询价单不存在");
         if (!["quoting", "quoted"].includes(request.status)) throw new Error("该询价单已结束");
         const created = await db.createRecyclingQuoteTransaction({
@@ -1452,11 +1455,12 @@ export const appRouter = router({
       return { success: true };
     }),
     confirmDelivery: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
-      const order = await db.getOrder(input.id);
+      const delivery = await confirmDeliveryTransaction(input.id, ctx.user.id);
+      const order = delivery.order;
       if (!order) throw new Error("订单不存在");
       if (order.sellerId !== ctx.user.id) throw new Error("只有卖家可以确认交付");
+      if (!delivery.transitioned) return { success: true };
       if (!["pending_delivery", "pending_confirmation"].includes(order.status)) throw new Error("当前状态不能确认交付");
-      await db.updateOrder(input.id, { status: "pending_acceptance" });
       await db.addOrderLog(input.id, order.status, "pending_acceptance", "卖家已交付,等待买家确认");
       await db.createNotification({
         userId: order.buyerId,

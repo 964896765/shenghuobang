@@ -1,7 +1,10 @@
 import type { Express, Request } from "express";
 import crypto from "node:crypto";
+import { and, eq, isNull } from "drizzle-orm";
+import { contentPosts } from "../../drizzle/schema";
 import { sdk } from "./sdk";
 import * as db from "../db";
+import { requireDb } from "../db";
 import { getStorageProvider } from "../storage/registry";
 import { DevelopmentFileScanner } from "../storage/scanner";
 import { detectFile, sanitizeFileName, validateMimeAndExtension } from "../storage/file-policy";
@@ -74,6 +77,19 @@ export function registerFileRoutes(app: Express) {
         ["pending", "rejected"].includes(file.virusScanStatus)
       ) {
         return res.status(404).json({ error: "图片不存在或不可用" });
+      }
+      // Content media is uploaded before publication. Keep drafts,
+      // unpublished posts and removed posts private even if a stale file URL
+      // is retained by a client.
+      if (file.relatedEntityType === "content_post" && file.relatedEntityId) {
+        const database = await requireDb();
+        const [post] = await database.select({ id: contentPosts.id }).from(contentPosts).where(and(
+          eq(contentPosts.id, file.relatedEntityId),
+          eq(contentPosts.status, "published"),
+          eq(contentPosts.visibility, "public"),
+          isNull(contentPosts.deletedAt),
+        )).limit(1);
+        if (!post) return res.status(404).json({ error: "content media is not publicly available" });
       }
       const body = await getStorageProvider().read(file.storageKey);
       res.setHeader("Content-Type", file.mimeType);

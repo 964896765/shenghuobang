@@ -42,6 +42,24 @@ describe("V4 marketplace persistence contract", () => {
   });
 });
 
+describe("payment confirmation order-state guard", () => {
+  it("checks pending_payment both before and after the provider call", () => {
+    const finance = source("server/services/finance-service.ts");
+    const guards = finance.match(/order\.status !== "pending_payment"/g) ?? [];
+    expect(guards.length).toBeGreaterThanOrEqual(2);
+    expect(finance).toContain("ORDER_NOT_AWAITING_PAYMENT");
+  });
+});
+
+describe("delivery confirmation concurrency guard", () => {
+  it("locks the order before advancing delivery state", () => {
+    const service = source("server/services/order-service.ts");
+    expect(service).toContain("confirmDeliveryTransaction");
+    expect(service).toContain('.for("update")');
+    expect(service).toContain('status: "pending_acceptance"');
+  });
+});
+
 describe("SandboxPaymentProvider outcomes", () => {
   const provider = new SandboxPaymentProvider();
   const base = { paymentNo: "PAY-DEMO-001", amount: "299.00", currency: "CNY" };

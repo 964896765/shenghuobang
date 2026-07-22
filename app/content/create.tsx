@@ -8,7 +8,7 @@ import { ListingImagePicker } from "@/components/listing-images";
 import { AIHintBar, AppTextInput, ChipSelector, FieldLabel, PrimaryButton } from "@/components/common";
 import { ScreenContainer } from "@/components/screen-container";
 import { StickyActionBar } from "@/components/trust-ui";
-import { type ContentMediaDraft, uploadContentMedia } from "@/lib/content-media";
+import { contentMediaUrl, type ContentMediaDraft, uploadContentMedia } from "@/lib/content-media";
 import { useGlobalLocation } from "@/lib/location-context";
 import { useRole } from "@/lib/role-context";
 import { trpc } from "@/lib/trpc";
@@ -42,7 +42,7 @@ function validType(value?: string): ContentType {
 
 function ContentEditor() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ type?: string }>();
+  const params = useLocalSearchParams<{ type?: string; postId?: string }>();
   const { activeIdentityId, activeOrganizationId } = useRole();
   const location = useGlobalLocation();
   const utils = trpc.useUtils();
@@ -75,8 +75,59 @@ function ContentEditor() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const autosaveReady = useRef(false);
+  const hydratedPostId = useRef<number | null>(null);
+  const existingPostId = Number(params.postId);
+  const existingPost = trpc.content.detail.useQuery(
+    { postId: Number.isSafeInteger(existingPostId) && existingPostId > 0 ? existingPostId : 1 },
+    { enabled: Number.isSafeInteger(existingPostId) && existingPostId > 0 },
+  );
 
   useEffect(() => setContentType(validType(params.type)), [params.type]);
+
+  // Drafts are reopened from the creator center with ?postId=. Hydrate the
+  // server snapshot (including already-uploaded media) so editing continues
+  // after an app restart without re-uploading files.
+  useEffect(() => {
+    const item = existingPost.data;
+    if (!item || hydratedPostId.current === existingPostId) return;
+    hydratedPostId.current = existingPostId;
+    setPostId(item.id);
+    setContentType(item.contentType);
+    setTitle(item.title);
+    setSummary(item.summary ?? "");
+    setBody(item.body);
+    setLocationLabel(item.locationLabel ?? "");
+    setVisibility(item.visibility as "public" | "followers" | "private");
+    // Platform-verified is reserved for server moderation and is not an
+    // editable author selection; keep the draft's source editable instead.
+    setSourceType(item.sourceType === "platform_verified" ? "external_public" : item.sourceType);
+    setSourceStatement(item.sourceStatement ?? "");
+    setAllowComments(item.allowComments);
+    setImages(item.media.filter((media) => media.mediaType === "image").map((media) => ({
+      key: `existing-image-${media.id}`,
+      uri: contentMediaUrl(media.fileId),
+      name: `image-${media.fileId}`,
+      mimeType: "image/*",
+      size: 0,
+      fileId: media.fileId,
+    })));
+    setVideos(item.media.filter((media) => media.mediaType === "video").map((media) => ({
+      key: `existing-video-${media.id}`,
+      uri: contentMediaUrl(media.fileId),
+      name: `video-${media.fileId}.mp4`,
+      mimeType: "video/mp4",
+      size: 0,
+      fileId: media.fileId,
+    })));
+    setRelations(item.relations.map((relation) => ({
+      key: `${relation.relationType}:${relation.relationId}`,
+      relationType: relation.relationType as RelationType,
+      relationId: String(relation.relationId),
+      relationLabel: relation.relationLabel ?? "",
+    })));
+    setTags(item.tags.map((tag) => tag.name).join(", "));
+    autosaveReady.current = true;
+  }, [activeIdentityId, existingPost.data, existingPostId]);
 
   const tagValues = useMemo(() => tags.split(/[,，]/).map((tag) => tag.trim()).filter(Boolean).slice(0, 10), [tags]);
   const draftValues = () => ({
@@ -131,6 +182,10 @@ function ContentEditor() {
 
   const persist = async (action: "save" | "preview" | "publish") => {
     if (busy) return;
+    if (Number.isSafeInteger(existingPostId) && existingPostId > 0 && hydratedPostId.current !== existingPostId) {
+      setError(existingPost.isError ? "草稿加载失败，请重试" : "草稿正在加载，请稍候");
+      return;
+    }
     setBusy(true);
     setError("");
     try {

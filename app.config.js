@@ -1,6 +1,7 @@
 require("./scripts/load-env.cjs");
 
 const bundleId = process.env.APP_BUNDLE_ID?.trim() || "com.shenghuobang.app";
+const publicApiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL?.trim() || "";
 const defaultEasProjectId = "197aef13-6b84-45e3-9c9a-ad87c596971f";
 const easProjectId =
   process.env.EXPO_PUBLIC_EAS_PROJECT_ID?.trim() || defaultEasProjectId;
@@ -31,6 +32,10 @@ const config = {
     edgeToEdgeEnabled: true,
     predictiveBackGestureEnabled: false,
     softwareKeyboardLayoutMode: "resize",
+    // LAN demo builds intentionally use http:// on a trusted local network.
+    // Production/staging builds should provide https:// and therefore keep
+    // cleartext traffic disabled.
+    usesCleartextTraffic: publicApiBaseUrl.startsWith("http://"),
     package: bundleId,
     versionCode: 324,
     permissions: ["POST_NOTIFICATIONS"],

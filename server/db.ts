@@ -55,13 +55,24 @@ import {
   reviews,
   creditEvents,
   orderLineItems,
+  listingSkus,
+  paymentEvents,
+  escrowRecords,
+  escrowReleases,
+  productUnits,
+  productPassportEvents,
   settlements,
   settlementItems,
 } from "../drizzle/schema";
-import { normalizeMoney } from "./domain/money";
+import { addMoney, moneyToCents, normalizeMoney, subtractMoney } from "./domain/money";
 import { emitRealtimeEvent } from "./event-bus";
 import { getPushProvider } from "./notifications/registry";
 import { logger } from "./_core/logger";
+import {
+  assertProductUnitTransition,
+  normalizePassportOccurredAt,
+  productPassportEventHash,
+} from "./services/product-lifecycle-service";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -2048,23 +2059,148 @@ export async function completeOrderTransaction(orderId: number, buyerId: number)
     if (!order) throw new Error("订单不存在");
     if (order.buyerId !== buyerId) throw new Error("只有买家可以确认收货");
     if (order.status !== "pending_acceptance") throw new Error("当前状态不能确认收货");
-    await tx.update(orders).set({ status:"completed", completedAt:new Date() }).where(eq(orders.id, orderId));
-    await tx.insert(orderStatusLogs).values({ orderId, fromStatus:"pending_acceptance", toStatus:"completed", note:"买家确认收货,订单完成" });
     if (order.orderType === "listing") {
-      const commerceLines = await tx.select({ id: orderLineItems.id }).from(orderLineItems).where(eq(orderLineItems.orderId, orderId)).limit(1);
-      if (commerceLines.length) return order;
-      const listingRows=await tx.select().from(listings).where(eq(listings.id, order.refId)).for("update").limit(1);
-      const listing=listingRows[0];
-      if (listing) {
+      const commerceLines = await tx.select().from(orderLineItems).where(eq(orderLineItems.orderId, orderId)).for("update");
+      if (commerceLines.length) {
         const transferType = order.amount === 0 ? "given_away" : "sold";
-        await tx.update(listings).set({ status:"completed", itemStatus:transferType }).where(eq(listings.id, listing.id));
-        if (listing.itemId) {
-          const itemRows=await tx.select().from(items).where(eq(items.id, listing.itemId)).for("update").limit(1);
-          const item=itemRows[0];
-          if (!item || item.ownerId !== order.sellerId) throw new Error("物品所有权状态已变化");
-          await tx.update(items).set({ ownerId:order.buyerId, status:transferType }).where(eq(items.id, listing.itemId));
-          await tx.insert(itemOwnershipHistory).values({ itemId:listing.itemId, fromUserId:order.sellerId, toUserId:order.buyerId, transferType, orderId });
-          await tx.insert(itemStatusLogs).values({ itemId:listing.itemId, fromStatus:item.status, toStatus:transferType, operatorId:buyerId, reason:`订单 ${orderId} 完成流转` });
+        const listingIds = [...new Set(commerceLines.map((line) => line.listingId))];
+        const lockedListings = await tx.select().from(listings).where(inArray(listings.id, listingIds)).orderBy(listings.id).for("update");
+        if (lockedListings.length !== listingIds.length || lockedListings.some((listing) => listing.sellerId !== order.sellerId)) {
+          throw new Error("商品或卖家状态已变化");
+        }
+
+        const unitQuantities = new Map<number, number>();
+        for (const line of commerceLines) {
+          if (line.productUnitId != null) unitQuantities.set(line.productUnitId, (unitQuantities.get(line.productUnitId) ?? 0) + line.quantity);
+        }
+        if ([...unitQuantities.values()].some((quantity) => quantity !== 1)) throw new Error("单件产品订单数量不一致");
+        const unitIds = [...unitQuantities.keys()].sort((left, right) => left - right);
+        const lockedUnits = unitIds.length
+          ? await tx.select().from(productUnits).where(inArray(productUnits.id, unitIds)).orderBy(productUnits.id).for("update")
+          : [];
+        if (lockedUnits.length !== unitIds.length) throw new Error("订单关联的单件产品不存在");
+
+        const transferredItemIds = new Set<number>();
+        for (const unit of lockedUnits) {
+          if (unit.currentOwnerAccountId !== order.sellerId) throw new Error("单件产品所有权状态已变化");
+          assertProductUnitTransition(unit.status, "transferred");
+          const [lastEvent] = await tx.select().from(productPassportEvents)
+            .where(eq(productPassportEvents.productUnitId, unit.id))
+            .orderBy(desc(productPassportEvents.sequenceNumber))
+            .for("update")
+            .limit(1);
+          const occurredAt = normalizePassportOccurredAt(new Date());
+          const requestId = `order-transfer:${order.id}:unit:${unit.id}`;
+          const sequenceNumber = (lastEvent?.sequenceNumber ?? 0) + 1;
+          const previousEventHash = lastEvent?.eventHash ?? null;
+          const detail = { orderId: order.id, fromOwnerAccountId: order.sellerId, toOwnerAccountId: order.buyerId, transferType };
+          const eventHash = productPassportEventHash({
+            productUnitId: unit.id,
+            sequenceNumber,
+            eventType: "ownership_transferred",
+            actorAccountId: buyerId,
+            actorOrganizationId: null,
+            fromStatus: unit.status,
+            toStatus: "transferred",
+            visibility: "owner",
+            sourceType: "order",
+            sourceId: String(order.id),
+            requestId,
+            detail,
+            previousEventHash,
+            occurredAt,
+          });
+          await tx.insert(productPassportEvents).values({
+            productUnitId: unit.id,
+            sequenceNumber,
+            eventType: "ownership_transferred",
+            actorAccountId: buyerId,
+            actorOrganizationId: null,
+            fromStatus: unit.status,
+            toStatus: "transferred",
+            visibility: "owner",
+            sourceType: "order",
+            sourceId: String(order.id),
+            requestId,
+            detail,
+            previousEventHash,
+            eventHash,
+            occurredAt,
+          });
+          await tx.update(productUnits).set({
+            currentOwnerAccountId: order.buyerId,
+            status: "transferred",
+            authorizationVersion: unit.authorizationVersion + 1,
+            lastRequestId: requestId,
+          }).where(eq(productUnits.id, unit.id));
+
+          if (unit.linkedItemId != null) {
+            const [item] = await tx.select().from(items).where(eq(items.id, unit.linkedItemId)).for("update").limit(1);
+            if (!item || item.ownerId !== order.sellerId) throw new Error("物品所有权状态已变化");
+            await tx.update(items).set({ ownerId: order.buyerId, status: transferType }).where(eq(items.id, item.id));
+            await tx.insert(itemOwnershipHistory).values({ itemId: item.id, fromUserId: order.sellerId, toUserId: order.buyerId, transferType, orderId });
+            await tx.insert(itemStatusLogs).values({ itemId: item.id, fromStatus: item.status, toStatus: transferType, operatorId: buyerId, reason: `订单 ${orderId} 完成流转` });
+            transferredItemIds.add(item.id);
+          }
+        }
+
+        for (const listing of lockedListings) {
+          const [availableSku] = await tx.select({ id: listingSkus.id }).from(listingSkus)
+            .where(and(eq(listingSkus.listingId, listing.id), eq(listingSkus.status, "active"), sql`${listingSkus.stock} > 0`))
+            .limit(1);
+          await tx.update(listings).set({ status: availableSku ? listing.status : "completed", itemStatus: transferType }).where(eq(listings.id, listing.id));
+          if (listing.itemId && !transferredItemIds.has(listing.itemId)) {
+            const [item] = await tx.select().from(items).where(eq(items.id, listing.itemId)).for("update").limit(1);
+            if (!item || item.ownerId !== order.sellerId) throw new Error("物品所有权状态已变化");
+            await tx.update(items).set({ ownerId: order.buyerId, status: transferType }).where(eq(items.id, item.id));
+            await tx.insert(itemOwnershipHistory).values({ itemId: item.id, fromUserId: order.sellerId, toUserId: order.buyerId, transferType, orderId });
+            await tx.insert(itemStatusLogs).values({ itemId: item.id, fromStatus: item.status, toStatus: transferType, operatorId: buyerId, reason: `订单 ${orderId} 完成流转` });
+          }
+        }
+
+        if (order.amount > 0) {
+          const [escrow] = await tx.select().from(escrowRecords).where(eq(escrowRecords.orderId, order.id)).for("update").limit(1);
+          if (!escrow) throw new Error("订单托管记录不存在");
+          if (!(escrow.status === "funded" || escrow.status === "partially_refunded")) throw new Error("订单托管状态不能释放");
+          const releaseAmount = subtractMoney(escrow.totalAmount, addMoney(escrow.releasedAmount, escrow.refundedAmount));
+          if (moneyToCents(releaseAmount) <= 0n) throw new Error("订单托管资金已处理");
+          const releasedAmount = addMoney(escrow.releasedAmount, releaseAmount);
+          await tx.insert(escrowReleases).values({
+            releaseNo: `REL-ORDER-${order.id}`,
+            escrowId: escrow.id,
+            settlementId: null,
+            amount: releaseAmount,
+            currency: escrow.currency,
+            status: "success",
+            idempotencyKey: `order-complete:${order.id}`,
+            releasedBy: buyerId,
+            releasedAt: new Date(),
+          });
+          const fullyHandled = moneyToCents(addMoney(releasedAmount, escrow.refundedAmount)) === moneyToCents(escrow.totalAmount);
+          await tx.update(escrowRecords).set({ releasedAmount, status: fullyHandled ? "released" : "partially_released" }).where(eq(escrowRecords.id, escrow.id));
+          await tx.insert(paymentEvents).values({
+            paymentId: escrow.paymentId,
+            eventType: "escrow_released",
+            amount: releaseAmount,
+            currency: escrow.currency,
+            externalEventNo: `escrow-release-order:${order.id}`,
+            detail: { orderId: order.id, operatorId: buyerId },
+          });
+        }
+      } else {
+        const listingRows=await tx.select().from(listings).where(eq(listings.id, order.refId)).for("update").limit(1);
+        const listing=listingRows[0];
+        if (listing) {
+          const transferType = order.amount === 0 ? "given_away" : "sold";
+          await tx.update(listings).set({ status:"completed", itemStatus:transferType }).where(eq(listings.id, listing.id));
+          if (listing.itemId) {
+            const itemRows=await tx.select().from(items).where(eq(items.id, listing.itemId)).for("update").limit(1);
+            const item=itemRows[0];
+            if (!item || item.ownerId !== order.sellerId) throw new Error("物品所有权状态已变化");
+            await tx.update(items).set({ ownerId:order.buyerId, status:transferType }).where(eq(items.id, listing.itemId));
+            await tx.insert(itemOwnershipHistory).values({ itemId:listing.itemId, fromUserId:order.sellerId, toUserId:order.buyerId, transferType, orderId });
+            await tx.insert(itemStatusLogs).values({ itemId:listing.itemId, fromStatus:item.status, toStatus:transferType, operatorId:buyerId, reason:`订单 ${orderId} 完成流转` });
+          }
         }
       }
     } else if (order.orderType === "recycling") {
@@ -2079,6 +2215,8 @@ export async function completeOrderTransaction(orderId: number, buyerId: number)
       await tx.insert(itemOwnershipHistory).values({ itemId: item.id, fromUserId: order.sellerId, toUserId: null, transferType: "recycled", orderId, note: "回收订单完成，物品退出可交易状态" });
       await tx.insert(itemStatusLogs).values({ itemId: item.id, fromStatus: item.status, toStatus: "recycled", operatorId: buyerId, reason: `回收订单 ${orderId} 完成` });
     }
+    await tx.update(orders).set({ status:"completed", completedAt:new Date() }).where(eq(orders.id, orderId));
+    await tx.insert(orderStatusLogs).values({ orderId, fromStatus:"pending_acceptance", toStatus:"completed", note:"买家确认收货,订单完成" });
     return order;
   });
 }

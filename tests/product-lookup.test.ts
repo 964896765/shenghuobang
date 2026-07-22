@@ -12,5 +12,6 @@ describe("product barcode and QR lookup", () => {
     expect(parseProductLookup("https://demo.local/products/passport/DEMO-UNIT-PHONE-001")).toBe("DEMO-UNIT-PHONE-001");
     expect(parseProductLookup(JSON.stringify({ publicCode: "DEMO-UNIT-BOOK-001" }))).toBe("DEMO-UNIT-BOOK-001");
     expect(parseProductLookup("https://demo.local/scan?serial=SN-DEMO-2")).toBe("SN-DEMO-2");
+    expect(parseProductLookup(JSON.stringify({ passportUrl: "https://demo.local/products/passport/DEMO-UNIT-BOOK-001" }))).toBe("DEMO-UNIT-BOOK-001");
   });
 });

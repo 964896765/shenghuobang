@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, Text, View } from "react-native";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { AuthGate, PageHeader } from "@/components/auth-gate";
@@ -9,6 +9,8 @@ import { AppTextInput, ChipSelector, FieldLabel, PrimaryButton } from "@/compone
 import { ITEM_CATEGORIES } from "@/lib/labels";
 
 function CreateRecyclingInner() {
+  const { itemId: itemIdParam } = useLocalSearchParams<{ itemId?: string }>();
+  const linkedItemId = itemIdParam ? Number(itemIdParam) : undefined;
   const router = useRouter();
   const [title, setTitle] = useState("");
   const [category, setCategory] = useState("家电");
@@ -37,6 +39,7 @@ function CreateRecyclingInner() {
       return;
     }
     createMut.mutate({
+      ...(linkedItemId !== undefined && Number.isInteger(linkedItemId) && linkedItemId > 0 ? { itemId: linkedItemId } : {}),
       title: title.trim(),
       category,
       conditionDesc: conditionDesc.trim() || undefined,

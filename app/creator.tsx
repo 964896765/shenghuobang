@@ -56,7 +56,7 @@ function CreatorCenter() {
         <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 48 }}>
           {(view === "works" || view === "drafts") ? (
             rows.length ? rows.map(({ post, metrics }) => (
-              <Pressable key={post.id} onPress={() => router.push(`/content/${post.id}${post.status === "published" ? "" : "?preview=1"}` as never)} className="mb-3 rounded-2xl border border-border bg-surface p-4">
+              <Pressable key={post.id} onPress={() => router.push((post.status === "published" ? `/content/${post.id}` : `/content/create?postId=${post.id}&type=${post.contentType}`) as never)} className="mb-3 rounded-2xl border border-border bg-surface p-4">
                 <View className="flex-row items-center justify-between gap-2"><StatusBadge label={post.status} tone={post.status === "published" ? "green" : "orange"} /><Text className="text-xs text-muted">{contentTypeLabel(post.contentType)}</Text></View>
                 <Text className="mt-3 text-lg font-bold text-foreground">{post.title}</Text>
                 <Text className="mt-1 text-sm text-muted" numberOfLines={2}>{post.summary || post.body}</Text>

@@ -25,10 +25,11 @@ describe("V4 review and credit traceability", () => {
     expect(db).toContain("replyToReviewTransaction");
   });
 
-  it("does not close the legacy listing when a multi-SKU order is received", () => {
+  it("keeps multi-SKU order completion scoped to its commerce lines", () => {
     const db = source("server/db.ts");
     expect(db).toContain("const commerceLines = await tx.select");
-    expect(db).toContain("if (commerceLines.length) return order");
+    expect(db).toContain("if (commerceLines.length) {");
+    expect(db).toContain("const listingIds = [...new Set(commerceLines.map((line) => line.listingId))]");
   });
 });
 

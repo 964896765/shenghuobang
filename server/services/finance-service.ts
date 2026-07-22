@@ -99,6 +99,9 @@ export async function confirmPayment(input: { paymentId: number; payerId: number
     const orderRows = await tx.select().from(orders).where(eq(orders.id, payment.orderId)).for("update").limit(1);
     const order = orderRows[0];
     if (!order) throw new Error("订单不存在");
+    if (order.status !== "pending_payment") {
+      throw new Error("ORDER_NOT_AWAITING_PAYMENT");
+    }
     assertPaymentAmount(order.amount, payment.amount);
 
     const requestId = providerRequestId(payment.id, input.idempotencyKey);
@@ -166,6 +169,9 @@ export async function confirmPayment(input: { paymentId: number; payerId: number
     if (payment.status === "success") return { payment, alreadyConfirmed: true };
     const order = (await tx.select().from(orders).where(eq(orders.id, payment.orderId)).for("update").limit(1))[0];
     if (!order) throw new Error("订单不存在");
+    if (order.status !== "pending_payment") {
+      throw new Error("ORDER_NOT_AWAITING_PAYMENT");
+    }
     assertPaymentAmount(order.amount, payment.amount);
     await tx.update(payments).set({ status: "success", providerTransactionNo: providerResult.providerTransactionNo, paidAt: now, failedReason: null }).where(eq(payments.id, payment.id));
     await tx.update(orders).set({ status: "pending_delivery", paidAt: now }).where(eq(orders.id, order.id));
