@@ -73,6 +73,12 @@ Approved By: Product Direction Confirmed By User
 
 **目标：** 建立生活帮长期竞争壁垒，使新产品、旧物交易、维修和回收共享同一条产品事实链。
 
+### 横向核心：可信内容生态
+
+内容创作不是附属信息流，而是连接三层产品结构的传播、经验沉淀和业务转化中枢。内容创作、发现分发、统一发布入口和创作者中心共享同一内容事实源；内容可关联需求、创意、筹措、产品、单件、商品和服务，并以来源标签、身份认证、AI 标识、字段脱敏和审核记录进入高可信体系。
+
+详细边界见 [内容创作、发现分发与创作者生态蓝图](../architecture/CONTENT_CREATION_DISCOVERY_ECOSYSTEM_BLUEPRINT.md)。
+
 ## 3. 最终参与者体系
 
 角色不直接固化在账号上。平台以“账号 + 多业务身份 + 认证资质 + 组织成员关系 + 项目角色 + 平台职务”表达参与者。
@@ -140,11 +146,11 @@ Approved By: Product Direction Confirmed By User
 
 ### 发现
 
-顶部分类：需求、工程师、旧物、回收、新品、创意、服务。
+顶部内容频道：推荐、关注、产品、创意、经验、视频、问答、附近；结构化需求、工程师、旧物、回收、新品和服务继续通过搜索、频道关联卡片和业务入口访问。
 
 ### 发布
 
-根据当前身份动态显示：发布需求、发布旧物、发起回收、发布创意、发布新品、发布服务、创建生产询价。
+根据当前身份分成“业务发布”和“内容创作”。业务发布包括需求、旧物、回收、创意、新品、服务和生产询价；内容创作包括图文、视频、文章、问答、产品测评、教程、创意/筹措进展和维修案例。
 
 ### 消息
 
@@ -152,7 +158,7 @@ Approved By: Product Direction Confirmed By User
 
 ### 我的
 
-订单、发布、项目、物品、创意、产品档案、身份认证、组织、资金退款、设置隐私和工作台切换。
+订单、发布、项目、物品、创意、产品档案、创作者中心、身份认证、组织、资金退款、设置隐私和工作台切换。
 
 ## 5. 专业工作台最终形态
 
@@ -227,6 +233,7 @@ Approved By: Product Direction Confirmed By User
 - [最终 App 信息架构与工作台形态](./END_STATE_APP_INFORMATION_ARCHITECTURE.md)
 - [身份、组织与数据权限目标架构](../architecture/IDENTITY_ORGANIZATION_PERMISSION_ARCHITECTURE.md)
 - [核心领域整合蓝图](../architecture/CORE_DOMAIN_INTEGRATION_BLUEPRINT.md)
+- [内容创作、发现分发与创作者生态蓝图](../architecture/CONTENT_CREATION_DISCOVERY_ECOSYSTEM_BLUEPRINT.md)
 - [主阶段交付总矩阵](../execution/MASTER_STAGE_DELIVERY_MATRIX.md)
 
 产品定位、客户端呈现、数据对象、权限和版本任务必须以这四份文档共同判断，不能只看单一版本任务书。

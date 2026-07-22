@@ -23,6 +23,7 @@ Approved By: Product Direction Confirmed By User
 - File：文件及访问授权；
 - Conversation / Notification：沟通与通知；
 - Audit / Complaint：审计与争议治理。
+- Content / Relation / Interaction：内容、业务关联、互动、审核和转化归因。
 
 ## 2. 最终对象关系
 
@@ -71,6 +72,12 @@ ProductInstance / Item
 ├─ Order *
 ├─ Refurbishment *
 └─ RecyclingCase *
+
+ContentPost
+├─ Media / Tag / Comment / Interaction *
+├─ Relation -> Demand / Idea / Initiative / Product / ProductUnit / Listing / Service *
+├─ Moderation / Report *
+└─ Metrics / Conversion Attribution *
 
 RecyclingCase
 ├─ Quote / Reinspection / Handover
@@ -146,6 +153,10 @@ RecyclingCase
 ### 3.8 审计、投诉与职责分离
 
 认证、权限变更、文件访问、报价比较、验收、质检、资金和回收去向必须留下审计。投诉调查与裁定、财务审核与执行、认证初审与复审必须分离。
+
+### 3.9 内容与发现
+
+内容使用统一主表，通过受控多态关系连接业务对象；发现、搜索、推荐和附近仅消费已发布且对调用者可见的内容。内容不复制产品、价格、追溯或服务事实，关联卡片实时读取各领域授权视图。完整模型见 [内容生态蓝图](./CONTENT_CREATION_DISCOVERY_ECOSYSTEM_BLUEPRINT.md)。
 
 ## 4. 三层产品如何共享对象
 
