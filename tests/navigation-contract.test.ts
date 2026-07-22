@@ -4,7 +4,7 @@ import { APP_TABS, DISCOVER_CHANNELS, MESSAGE_CHANNELS } from "../shared/navigat
 import { HOME_ENTRIES } from "../shared/navigation/homeEntries";
 import { PROFILE_ENTRIES } from "../shared/navigation/profileEntries";
 import { PUBLISH_ENTRIES } from "../shared/navigation/publishEntries";
-import { ROLE_ENTRIES } from "../shared/navigation/roleEntries";
+import { appRoleForIdentityType, ROLE_ENTRIES, roleCodesForIdentityType } from "../shared/navigation/roleEntries";
 import { resolveEntryAccess } from "../shared/navigation/routePermissions";
 
 describe("统一 App 导航契约", () => {
@@ -46,5 +46,12 @@ describe("统一 App 导航契约", () => {
     expect(resolveEntryAccess(protectedEntry, { role: "user", isAuthenticated: false })).toBe("login_required");
     expect(resolveEntryAccess(disabledEntry, { role: "user", isAuthenticated: true })).toBe("feature_disabled");
     expect(resolveEntryAccess(engineerEntry, { role: "user", isAuthenticated: true })).toBe("permission_denied");
+  });
+
+  it("把服务端业务身份映射到统一客户端工作台上下文", () => {
+    expect(appRoleForIdentityType("repair_provider")).toBe("engineer");
+    expect(roleCodesForIdentityType("repair_provider")).toEqual(["repair_provider", "service_provider", "engineer"]);
+    expect(appRoleForIdentityType("enterprise_representative")).toBe("merchant");
+    expect(roleCodesForIdentityType("nonprofit_representative")).toContain("nonprofit");
   });
 });

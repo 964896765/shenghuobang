@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import assert from "node:assert/strict";
 import mysql, { type RowDataPacket } from "mysql2/promise";
+import { productPassportEventHash } from "../server/services/product-lifecycle-service";
 
 type Snapshot = {
   users: number;
@@ -49,16 +50,54 @@ async function snapshot(connection: mysql.Connection) {
   return rows[0];
 }
 
+async function assertSeedPassportIntegrity(connection: mysql.Connection) {
+  const [events] = await connection.query<(RowDataPacket & {
+    productUnitId: number;
+    sequenceNumber: number;
+    eventType: string;
+    actorAccountId: number | null;
+    actorOrganizationId: number | null;
+    fromStatus: string | null;
+    toStatus: string | null;
+    visibility: "public" | "owner" | "internal";
+    sourceType: string | null;
+    sourceId: string | null;
+    requestId: string;
+    detail: Record<string, unknown>;
+    previousEventHash: string | null;
+    eventHash: string;
+    occurredAt: Date;
+  })[]>(`
+    SELECT e.productUnitId,e.sequenceNumber,e.eventType,e.actorAccountId,e.actorOrganizationId,
+           e.fromStatus,e.toStatus,e.visibility,e.sourceType,e.sourceId,e.requestId,e.detail,
+           e.previousEventHash,e.eventHash,e.occurredAt
+    FROM product_passport_events e
+    JOIN product_units u ON u.id=e.productUnitId
+    WHERE u.publicCode LIKE 'DEMO-UNIT-%'
+    ORDER BY e.productUnitId,e.sequenceNumber
+  `);
+  assert.equal(events.length, 2, "演示产品单元应各有一条初始护照事件");
+  for (const event of events) {
+    assert.equal(event.sequenceNumber, 1, "演示护照初始事件序号错误");
+    assert.equal(event.previousEventHash, null, "演示护照初始事件不应存在前序哈希");
+    assert.equal(event.eventHash, productPassportEventHash(event), `演示护照事件 ${event.requestId} 哈希无效`);
+  }
+}
+
 async function main() {
   if (!process.env.DATABASE_URL) throw new Error("test:seed:idempotent 需要 DATABASE_URL");
-  const connection = await mysql.createConnection(process.env.DATABASE_URL);
+  const databaseUrl = new URL(process.env.DATABASE_URL);
+  databaseUrl.searchParams.set("timezone", "Z");
+  const connection = await mysql.createConnection(databaseUrl.toString());
   try {
     runSeed();
     const first = await snapshot(connection);
     assert.deepEqual(first, { users: 7, profiles: 7, needs: 3, listings: 3, recycling: 1, verifications: 4, products: 3, units: 2, skus: 4, content: 7, commerce: 4 });
+    await assertSeedPassportIntegrity(connection);
     runSeed();
     const second = await snapshot(connection);
     assert.deepEqual(second, first, "第二次 seed 改变了演示数据数量");
+    await assertSeedPassportIntegrity(connection);
     console.log("幂等 Seed 测试通过：连续执行两次未重复创建演示用户、产品、内容、商品、订单、支付、评价或信用事件");
   } finally {
     await connection.end();

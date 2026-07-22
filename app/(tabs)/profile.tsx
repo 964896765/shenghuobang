@@ -14,7 +14,7 @@ import { useRole } from "@/lib/role-context";
 import { trpc } from "@/lib/trpc";
 import type { AppEntry } from "@/shared/navigation/appNavigation";
 import { PROFILE_ENTRIES } from "@/shared/navigation/profileEntries";
-import { ROLE_ENTRIES } from "@/shared/navigation/roleEntries";
+import { ROLE_ENTRIES, roleCodesForIdentityType } from "@/shared/navigation/roleEntries";
 
 const GROUPS = [
   { id: "business", title: "我的业务" },
@@ -51,7 +51,9 @@ function ProfileInner() {
   let hasOrganizationWorkspace = false;
   for (const item of workspaceQuery.data?.available ?? []) {
     if (!item.available) continue;
-    if (item.workspaceType === "identity" && "typeCode" in item) availableRoleCodes.add(String(item.typeCode));
+    if (item.workspaceType === "identity" && "typeCode" in item) {
+      for (const code of roleCodesForIdentityType(String(item.typeCode))) availableRoleCodes.add(code);
+    }
     if (item.workspaceType === "organization") hasOrganizationWorkspace = true;
   }
   const workspaces = ROLE_ENTRIES.filter((entry) => entry.id === "personal" ||

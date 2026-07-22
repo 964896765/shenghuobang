@@ -1,6 +1,7 @@
+import { CameraView, useCameraPermissions, type BarcodeScanningResult } from "expo-camera";
 import { useRouter } from "expo-router";
 import { useState } from "react";
-import { ScrollView, Text, TextInput, View } from "react-native";
+import { Linking, ScrollView, Text, TextInput, View } from "react-native";
 
 import { PageHeader } from "@/components/auth-gate";
 import { PrimaryButton } from "@/components/common";
@@ -13,6 +14,9 @@ export default function ProductPassportLookupScreen() {
   const [publicCode, setPublicCode] = useState("");
   const [serialNumber, setSerialNumber] = useState("");
   const [error, setError] = useState("");
+  const [scannerVisible, setScannerVisible] = useState(false);
+  const [scanLocked, setScanLocked] = useState(false);
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const lookup = trpc.productUnits.resolveLookup.useMutation({
     onSuccess: ({ publicCode: code }) => router.push(`/products/passport/${encodeURIComponent(code)}` as never),
     onError: () => setError("没有找到可公开查询的产品单元，请核对公开码或序列号。"),
@@ -22,6 +26,26 @@ export default function ProductPassportLookupScreen() {
     if (!normalized) return;
     setError("");
     lookup.mutate({ value: normalized });
+  };
+  const startScanning = async () => {
+    setError("");
+    setScanLocked(false);
+    setScannerVisible(true);
+    if (!cameraPermission?.granted && cameraPermission?.canAskAgain !== false) {
+      await requestCameraPermission();
+    }
+  };
+  const handleBarcodeScanned = ({ data }: BarcodeScanningResult) => {
+    if (scanLocked) return;
+    const normalized = parseProductLookup(data);
+    if (!normalized) {
+      setError("二维码或条码没有可查询的内容，请重试或手动输入公开码。");
+      return;
+    }
+    setScanLocked(true);
+    setScannerVisible(false);
+    setPublicCode(data);
+    openLookup(normalized);
   };
 
   return (
@@ -36,6 +60,46 @@ export default function ProductPassportLookupScreen() {
         </View>
 
         <View className="bg-surface border border-border rounded-2xl p-4 mt-4">
+          <PrimaryButton
+            variant="outline"
+            title={scannerVisible ? "关闭相机" : "相机扫码"}
+            onPress={() => {
+              if (scannerVisible) setScannerVisible(false);
+              else void startScanning();
+            }}
+          />
+          {scannerVisible && cameraPermission?.granted ? (
+            <View className="rounded-2xl overflow-hidden mt-4 bg-black">
+              <CameraView
+                style={{ height: 280 }}
+                facing="back"
+                barcodeScannerSettings={{ barcodeTypes: ["qr", "ean13", "ean8", "code128", "upc_a", "upc_e"] }}
+                onBarcodeScanned={scanLocked ? undefined : handleBarcodeScanned}
+              />
+              <Text className="text-sm text-white text-center bg-black px-4 py-3">
+                将产品二维码或条码放入取景框；识别失败时可继续手动输入。
+              </Text>
+            </View>
+          ) : null}
+          {scannerVisible && cameraPermission && !cameraPermission.granted ? (
+            <View className="bg-warning/10 border border-warning/20 rounded-xl p-4 mt-4">
+              <Text className="text-base font-semibold text-foreground">需要相机权限</Text>
+              <Text className="text-sm text-muted leading-5 mt-1">
+                相机仅用于扫描产品二维码和条码。拒绝后仍可使用下方公开码和序列号查询。
+              </Text>
+              <View className="mt-3">
+                <PrimaryButton
+                  small
+                  title={cameraPermission.canAskAgain ? "允许相机权限" : "打开系统设置"}
+                  onPress={() => {
+                    if (cameraPermission.canAskAgain) void requestCameraPermission();
+                    else void Linking.openSettings();
+                  }}
+                />
+              </View>
+            </View>
+          ) : null}
+
           <Text className="text-sm font-semibold text-foreground">公开码、条码或二维码内容</Text>
           <TextInput
             value={publicCode}

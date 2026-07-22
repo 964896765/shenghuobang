@@ -1,5 +1,27 @@
 import type { AppEntry } from "./appNavigation";
 
+const IDENTITY_ROLE_ALIASES: Readonly<Record<string, readonly string[]>> = {
+  repair_provider: ["service_provider", "engineer"],
+  service_provider: ["engineer"],
+  enterprise_representative: ["enterprise", "merchant"],
+  nonprofit_representative: ["nonprofit"],
+  designer: ["engineer"],
+  manufacturer: ["merchant"],
+  supplier: ["merchant"],
+  recycler: ["merchant"],
+};
+
+export function roleCodesForIdentityType(typeCode: string): readonly string[] {
+  return [typeCode, ...(IDENTITY_ROLE_ALIASES[typeCode] ?? [])];
+}
+
+export function appRoleForIdentityType(typeCode: string): "user" | "engineer" | "merchant" {
+  const codes = roleCodesForIdentityType(typeCode);
+  if (codes.includes("engineer")) return "engineer";
+  if (codes.includes("merchant")) return "merchant";
+  return "user";
+}
+
 export const ROLE_ENTRIES: readonly AppEntry[] = [
   { id: "personal", title: "个人工作台", icon: "person.fill", route: "/workspaces", description: "个人业务与可信资产", supportedRoles: ["user", "engineer", "merchant"], requiredCapabilities: [], locationAware: false, enabled: true, requiresAuth: true },
   { id: "enterprise", title: "企业工作台", icon: "briefcase.fill", route: "/workspaces", description: "企业组织、产品与协作", supportedRoles: ["merchant", "enterprise"], requiredCapabilities: ["workspace.enterprise"], locationAware: false, enabled: true, requiresAuth: true },

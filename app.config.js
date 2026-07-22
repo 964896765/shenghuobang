@@ -45,12 +45,19 @@ const config = {
     "expo-asset",
     "expo-font",
     "expo-web-browser",
+    [
+      "expo-camera",
+      {
+        cameraPermission: "允许生活帮使用相机扫描产品二维码和条码。",
+        recordAudioAndroid: false,
+      },
+    ],
     ["expo-audio", { microphonePermission: false, recordAudioAndroid: false }],
     [
       "expo-image-picker",
       {
         photosPermission: "允许生活帮访问你选择的照片，用于发布和编辑物品图片。",
-        cameraPermission: false,
+        cameraPermission: "允许生活帮使用相机扫描产品二维码和条码。",
         microphonePermission: false,
       },
     ],

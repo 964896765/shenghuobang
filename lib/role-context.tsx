@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/hooks/use-auth";
+import { appRoleForIdentityType } from "@/shared/navigation/roleEntries";
 
 export type AppRole = "user" | "engineer" | "merchant";
 
@@ -54,8 +55,8 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
     const activeIdentity = current?.workspaceType === "identity"
       ? workspaceQuery.data?.available.find((item) => item.workspaceType === "identity" && "identityId" in item && item.identityId === current.identityId)
       : undefined;
-    const preferredRole: AppRole = activeIdentity && "typeCode" in activeIdentity && ["engineer", "merchant"].includes(activeIdentity.typeCode)
-      ? activeIdentity.typeCode as AppRole
+    const preferredRole: AppRole = activeIdentity && "typeCode" in activeIdentity
+      ? appRoleForIdentityType(String(activeIdentity.typeCode))
       : "user";
     return {
       role: preferredRole,

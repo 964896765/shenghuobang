@@ -7,6 +7,7 @@ import * as dotenv from "dotenv";
 import path from "node:path";
 import { resolveMysqlUrlFromEnv } from "./lib/mysql-test-config.mjs";
 import { hashPassword } from "../server/_core/password";
+import { productPassportEventHash } from "../server/services/product-lifecycle-service";
 
 dotenv.config({ path: path.resolve(process.cwd(), ".env") });
 
@@ -110,7 +111,9 @@ async function ensureListing(connection: mysql.Connection, input: {
 }
 
 async function main() {
-  const connection = await mysql.createConnection(DB_URL);
+  const databaseUrl = new URL(DB_URL);
+  databaseUrl.searchParams.set("timezone", "Z");
+  const connection = await mysql.createConnection(databaseUrl.toString());
   console.log("🌱 开始补齐演示种子数据...");
   try {
     await connection.beginTransaction();
@@ -301,11 +304,34 @@ async function main() {
         const unitId = await findId(connection, "SELECT id FROM product_units WHERE publicCode=? LIMIT 1", [unitCode]);
         if (!unitId) throw new Error(`无法创建演示产品单元 ${unitCode}`);
         unitIds.push(unitId);
+        const requestId = `seed-passport-${index + 1}`;
+        const detail = { statement: "演示产品单元注册", demo: true };
+        const occurredAt = new Date("2025-01-01T00:00:00.000Z");
+        const eventHash = productPassportEventHash({
+          productUnitId: unitId,
+          sequenceNumber: 1,
+          eventType: "registered",
+          actorAccountId: uid7,
+          actorOrganizationId: null,
+          fromStatus: null,
+          toStatus: "registered",
+          visibility: "public",
+          sourceType: "seed",
+          sourceId: unitCode,
+          requestId,
+          detail,
+          previousEventHash: null,
+          occurredAt,
+        });
         await connection.execute(
-          `INSERT INTO product_passport_events (productUnitId,sequenceNumber,eventType,actorAccountId,toStatus,visibility,sourceType,sourceId,requestId,detail,eventHash,occurredAt)
-           VALUES (?,1,'registered',?,'registered','public','seed',?,?,?,SHA2(?,256),DATE_SUB(NOW(),INTERVAL 1 YEAR))
-           ON DUPLICATE KEY UPDATE eventType=eventType`,
-          [unitId, uid7, unitCode, `seed-passport-${index + 1}`, JSON.stringify({ statement: "演示产品单元注册", demo: true }), `passport:${unitCode}`],
+          `INSERT INTO product_passport_events
+             (productUnitId,sequenceNumber,eventType,actorAccountId,actorOrganizationId,fromStatus,toStatus,visibility,sourceType,sourceId,requestId,detail,previousEventHash,eventHash,occurredAt)
+           VALUES (?,1,'registered',?,NULL,NULL,'registered','public','seed',?,?,?,NULL,?,?)
+           ON DUPLICATE KEY UPDATE
+             actorAccountId=VALUES(actorAccountId),actorOrganizationId=NULL,fromStatus=NULL,toStatus='registered',
+             visibility='public',sourceType='seed',sourceId=VALUES(sourceId),detail=VALUES(detail),
+             previousEventHash=NULL,eventHash=VALUES(eventHash),occurredAt=VALUES(occurredAt)`,
+          [unitId, uid7, unitCode, requestId, JSON.stringify(detail), eventHash, occurredAt],
         );
         await connection.execute("UPDATE listing_product_links SET productUnitId=? WHERE listingId=?", [unitId, product.listingId]);
       }

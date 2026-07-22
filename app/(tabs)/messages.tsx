@@ -38,7 +38,12 @@ function MessagesInner() {
         <Text className="text-2xl font-bold text-foreground">消息</Text>
         {channel !== "chat" ? <Pressable onPress={() => markRead.mutate({})}><Text className="text-sm text-primary">全部已读</Text></Pressable> : null}
       </View>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: 10 }}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={{ flexGrow: 0 }}
+        contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: 10, alignItems: "center" }}
+      >
         {MESSAGE_CHANNELS.map((item) => (
           <Pressable key={item.id} onPress={() => setChannel(item.id)} className={`mx-1 rounded-full px-5 py-2 ${channel === item.id ? "bg-primary" : "border border-border bg-surface"}`}>
             <Text className={channel === item.id ? "font-medium text-white" : "text-foreground"}>{item.title}</Text>
