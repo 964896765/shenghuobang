@@ -146,7 +146,7 @@ ALTER TABLE `migration_anomalies` MODIFY COLUMN `status` enum('open','resolved',
 ALTER TABLE `migration_anomalies` MODIFY COLUMN `detailChecksum` char(64) NOT NULL;--> statement-breakpoint
 ALTER TABLE `migration_anomalies` ADD CONSTRAINT `migration_anomalies_run_fingerprint_uq` UNIQUE(`migrationRunId`,`fingerprint`);--> statement-breakpoint
 ALTER TABLE `migration_anomalies` ADD CONSTRAINT `migration_anomalies_blocking_handling_ck` CHECK (`migration_anomalies`.`severity` <> 'BLOCKING' or `migration_anomalies`.`handling` = 'ABORT_RUN');--> statement-breakpoint
-ALTER TABLE `migration_anomalies` ADD CONSTRAINT `migration_anomalies_migrationRunId_migration_runs_migrationRunId_fk` FOREIGN KEY (`migrationRunId`) REFERENCES `migration_runs`(`migrationRunId`) ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE `migration_anomalies` ADD CONSTRAINT `migration_anomalies_run_fk` FOREIGN KEY (`migrationRunId`) REFERENCES `migration_runs`(`migrationRunId`) ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE `migration_anomalies` ADD CONSTRAINT `migration_anomalies_resolvedByAccountId_users_id_fk` FOREIGN KEY (`resolvedByAccountId`) REFERENCES `users`(`id`) ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX `migration_anomalies_run_severity_status_idx` ON `migration_anomalies` (`migrationRunId`,`severity`,`status`);--> statement-breakpoint
 CREATE INDEX `migration_anomalies_entity_code_idx` ON `migration_anomalies` (`entityType`,`entityId`,`code`);

@@ -8,6 +8,13 @@ import { trpc } from "@/lib/trpc";
 
 const NOTICE = "沙箱支付，仅用于开发测试，不产生真实资金交易。";
 
+function paymentErrorMessage(message: string) {
+  if (message.includes("SANDBOX_SIMULATED_FAILURE")) {
+    return "本次沙箱支付已按测试场景失败，订单未扣款。请重新创建支付单后重试。";
+  }
+  return message;
+}
+
 function SandboxPaymentInner() {
   const { orderId: rawOrderId } = useLocalSearchParams<{ orderId: string }>();
   const orderId = Number(rawOrderId);
@@ -16,10 +23,12 @@ function SandboxPaymentInner() {
   const finance = trpc.payments.byOrder.useQuery({ orderId }, { enabled: Number.isInteger(orderId) && orderId > 0 });
   const [error, setError] = useState("");
   const createKey = useMemo(() => `pay-create-${orderId}-${Date.now()}`, [orderId]);
+  const failureCreateKey = useMemo(() => `simulate-failure-pay-${orderId}-${Date.now()}`, [orderId]);
+  const retryCreateKey = useMemo(() => `pay-retry-success-${orderId}-${Date.now()}`, [orderId]);
   const confirmKey = useMemo(() => `pay-confirm-${orderId}-${Date.now()}`, [orderId]);
   const createPayment = trpc.payments.create.useMutation({
     onSuccess: () => utils.payments.byOrder.invalidate({ orderId }),
-    onError: (e) => setError(e.message),
+    onError: (e) => setError(paymentErrorMessage(e.message)),
   });
   const confirmPayment = trpc.payments.confirmSandbox.useMutation({
     onSuccess: async () => {
@@ -30,7 +39,14 @@ function SandboxPaymentInner() {
         utils.projects.list.invalidate(),
       ]);
     },
-    onError: (e) => setError(e.message),
+    onError: async (e) => {
+      setError(paymentErrorMessage(e.message));
+      await Promise.all([
+        utils.payments.byOrder.invalidate({ orderId }),
+        utils.orders.detail.invalidate({ id: orderId }),
+        utils.orders.list.invalidate(),
+      ]);
+    },
   });
 
   if (finance.isLoading) return <LoadingView />;
@@ -67,10 +83,14 @@ function SandboxPaymentInner() {
       ) : null}
 
       {!payment ? (
-        <View className="mt-4">
+        <View className="mt-4 gap-3">
           <PrimaryButton title="创建沙箱支付单" variant="action" loading={createPayment.isPending} onPress={() => {
             setError("");
             createPayment.mutate({ orderId, amount: order.amount, idempotencyKey: createKey });
+          }} />
+          <PrimaryButton title="创建失败场景支付单" variant="outline" loading={createPayment.isPending} onPress={() => {
+            setError("");
+            createPayment.mutate({ orderId, amount: order.amount, idempotencyKey: failureCreateKey });
           }} />
         </View>
       ) : null}
@@ -81,6 +101,13 @@ function SandboxPaymentInner() {
             setError("");
             confirmPayment.mutate({ paymentId: payment.id, idempotencyKey: confirmKey });
           }} />
+        </View>
+      ) : null}
+
+      {payment?.status === "failed" ? (
+        <View className="mt-3">
+          <Text className="mb-3 text-sm text-error">本次失败由 SandboxPaymentProvider 模拟，不涉及真实资金。可重新创建支付单验证恢复路径。</Text>
+          <PrimaryButton title="重新创建成功场景支付单" variant="outline" loading={createPayment.isPending} onPress={() => createPayment.mutate({ orderId, amount: order.amount, idempotencyKey: retryCreateKey })} />
         </View>
       ) : null}
 

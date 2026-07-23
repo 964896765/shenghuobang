@@ -69,6 +69,9 @@ function CreditsInner() {
                 <Text className="text-xs text-muted">{formatTime(r.createdAt)}</Text>
               </View>
               {r.content ? <Text className="text-sm text-foreground mt-1 leading-5">{r.content}</Text> : null}
+              {r.tags?.length ? <Text className="text-xs text-primary mt-1">{r.tags.join(" · ")}</Text> : null}
+              <Text className="text-xs text-muted mt-1">来源：{r.businessSource} · 影响维度：{r.impactDimension}</Text>
+              {r.reply ? <Text className="text-sm text-muted mt-2">回复：{r.reply}</Text> : null}
             </View>
           ))
         )}

@@ -1,28 +1,24 @@
 import { Tabs } from "expo-router";
+import { Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { BottomTabIcon } from "@/components/bottom-tab-bar";
 import { HapticTab } from "@/components/haptic-tab";
-import { IconSymbol } from "@/components/ui/icon-symbol";
-import { Platform } from "react-native";
 import { useColors } from "@/hooks/use-colors";
 import { useRole } from "@/lib/role-context";
 import { trpc } from "@/lib/trpc";
+import { APP_TABS } from "@/shared/navigation/appNavigation";
 
 export default function TabLayout() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { role, isAuthenticated } = useRole();
+  const { isAuthenticated } = useRole();
   const bottomPadding = Platform.OS === "web" ? 12 : Math.max(insets.bottom, 8);
-  const tabBarHeight = 56 + bottomPadding;
-
   const unread = trpc.messagesRouter.unreadCount.useQuery(undefined, {
     enabled: isAuthenticated,
-    refetchInterval: 20000,
+    refetchInterval: 20_000,
   });
   const badge = unread.data ?? 0;
-
-  const homeTitle = role === "engineer" || role === "merchant" ? "工作台" : "首页";
-  const discoverTitle = role === "engineer" ? "需求大厅" : role === "merchant" ? "附近询价" : "发现";
 
   return (
     <Tabs
@@ -33,49 +29,24 @@ export default function TabLayout() {
         tabBarStyle: {
           paddingTop: 8,
           paddingBottom: bottomPadding,
-          height: tabBarHeight,
+          height: 56 + bottomPadding,
           backgroundColor: colors.background,
           borderTopColor: colors.border,
           borderTopWidth: 0.5,
         },
       }}
     >
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: homeTitle,
-          tabBarIcon: ({ color }) => <IconSymbol size={26} name={role === "user" ? "house.fill" : "briefcase.fill"} color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="discover"
-        options={{
-          title: discoverTitle,
-          tabBarIcon: ({ color }) => <IconSymbol size={26} name="safari.fill" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="publish"
-        options={{
-          title: "发布",
-          tabBarIcon: ({ color }) => <IconSymbol size={30} name="plus.circle.fill" color="#F97316" />,
-        }}
-      />
-      <Tabs.Screen
-        name="messages"
-        options={{
-          title: "消息",
-          tabBarBadge: badge > 0 ? (badge > 99 ? "99+" : badge) : undefined,
-          tabBarIcon: ({ color }) => <IconSymbol size={26} name="message.fill" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="profile"
-        options={{
-          title: "我的",
-          tabBarIcon: ({ color }) => <IconSymbol size={26} name="person.fill" color={color} />,
-        }}
-      />
+      {APP_TABS.map((entry) => (
+        <Tabs.Screen
+          key={entry.id}
+          name={entry.name}
+          options={{
+            title: entry.title,
+            tabBarBadge: entry.id === "messages" && badge > 0 ? (badge > 99 ? "99+" : badge) : undefined,
+            tabBarIcon: ({ color }) => <BottomTabIcon entry={entry} color={color} />,
+          }}
+        />
+      ))}
     </Tabs>
   );
 }

@@ -17,6 +17,8 @@ import {
   StatusBadge,
 } from "@/components/common";
 import { ORDER_STATUS, REVIEW_DIMENSIONS_SERVICE, REVIEW_DIMENSIONS_TRADE, formatTime } from "@/lib/labels";
+import { ListingImagePicker } from "@/components/listing-images";
+import { type ListingImageDraft, uploadReviewImage } from "@/lib/listing-images";
 
 const TYPE_LABEL: Record<string, string> = { listing: "旧物交易", project: "工程项目", recycling: "物品回收", swap: "物品置换" };
 
@@ -26,6 +28,7 @@ function OrderDetailInner() {
   const router = useRouter();
   const utils = trpc.useUtils();
   const detail = trpc.orders.detail.useQuery({ id: orderId }, { enabled: !Number.isNaN(orderId) });
+  const commerceDetail = trpc.commerce.orderDetail.useQuery({ orderId }, { enabled: !Number.isNaN(orderId) });
   const finance = trpc.payments.byOrder.useQuery({ orderId }, { enabled: !Number.isNaN(orderId) });
 
   const [error, setError] = useState("");
@@ -36,6 +39,10 @@ function OrderDetailInner() {
   const [overallRating, setOverallRating] = useState(5);
   const [dimensionRatings, setDimensionRatings] = useState<Record<string, number>>({});
   const [reviewContent, setReviewContent] = useState("");
+  const [reviewTags, setReviewTags] = useState("");
+  const [reviewImages, setReviewImages] = useState<ListingImageDraft[]>([]);
+  const [reviewRequestId] = useState(() => `review-${orderId}-${Date.now()}`);
+  const [replyDrafts, setReplyDrafts] = useState<Record<number, string>>({});
   const [refundAmount, setRefundAmount] = useState("");
   const [refundReason, setRefundReason] = useState("");
   const [refundKey] = useState(() => `refund-${orderId}-${Date.now()}`);
@@ -65,6 +72,10 @@ function OrderDetailInner() {
     },
     onError: (e) => setError(e.message),
   });
+  const replyMut = trpc.orders.replyReview.useMutation({
+    onSuccess: () => { setReplyDrafts({}); invalidate(); },
+    onError: (e) => setError(e.message),
+  });
   const refundMut = trpc.refunds.submit.useMutation({
     onSuccess: () => { setRefundReason(""); utils.refunds.mine.invalidate(); utils.payments.byOrder.invalidate({ orderId }); invalidate(); },
     onError: (e) => setError(e.message),
@@ -76,7 +87,7 @@ function OrderDetailInner() {
   if (detail.isLoading) return <LoadingView />;
   if (!detail.data) return <EmptyState title="订单不存在或无权查看" />;
 
-  const { order, logs, profileMap, myRole } = detail.data;
+  const { order, logs, reviews, profileMap, myRole } = detail.data;
   const st = ORDER_STATUS[order.status] ?? { label: order.status, tone: "gray" as const };
   const otherId = myRole === "buyer" ? order.sellerId : order.buyerId;
   const otherName = profileMap[otherId]?.nickname ?? (myRole === "buyer" ? "卖方" : "买方");
@@ -111,6 +122,27 @@ function OrderDetailInner() {
             />
           </View>
         </View>
+
+        {commerceDetail.data?.items.length ? (
+          <View className="mt-3 rounded-2xl border border-border bg-surface p-4">
+            <Text className="text-base font-semibold text-foreground">商品明细</Text>
+            {commerceDetail.data.items.map((item) => (
+              <View key={item.id} className="mt-3 border-t border-border pt-3">
+                <Text className="font-bold text-foreground">{item.title}</Text>
+                <Text className="mt-1 text-xs text-muted">{item.skuCode} · {Object.entries(item.attributes).map(([key, value]) => `${key}:${value}`).join(" · ")}</Text>
+                <Text className="mt-1 text-sm text-action">¥{item.unitPrice} × {item.quantity} = ¥{item.lineAmount}</Text>
+                {item.productModelId ? <Text className="mt-1 text-xs text-primary">已保留产品目录关联</Text> : null}
+              </View>
+            ))}
+          </View>
+        ) : null}
+        {commerceDetail.data?.shipping ? (
+          <View className="mt-3 rounded-2xl border border-border bg-surface p-4">
+            <Text className="text-base font-semibold text-foreground">配送信息</Text>
+            <Text className="mt-2 text-sm text-foreground">{commerceDetail.data.shipping.recipientName} {commerceDetail.data.shipping.phoneMasked}</Text>
+            <Text className="mt-1 text-sm leading-6 text-muted">{commerceDetail.data.shipping.province} {commerceDetail.data.shipping.city} {commerceDetail.data.shipping.district} {commerceDetail.data.shipping.addressLine}</Text>
+          </View>
+        ) : null}
 
         {order.orderType === "swap" ? (
           <View className="bg-primary/5 rounded-2xl p-4 mt-3 border border-primary/20">
@@ -199,20 +231,54 @@ function OrderDetailInner() {
             ))}
             <FieldLabel label="评价内容(选填)" />
             <AppTextInput placeholder="说说这次合作/交易的体验" value={reviewContent} onChangeText={setReviewContent} multiline maxLength={500} />
+            <FieldLabel label="评价标签(选填)" />
+            <AppTextInput placeholder="如：描述准确、发货及时（用逗号分隔）" value={reviewTags} onChangeText={setReviewTags} maxLength={160} />
+            <FieldLabel label="评价图片(选填)" />
+            <ListingImagePicker images={reviewImages} onChange={setReviewImages} disabled={reviewMut.isPending} onError={setError} />
             <View className="mt-4">
               <PrimaryButton
                 title="提交评价"
-                onPress={() =>
-                  reviewMut.mutate({
+                onPress={async () => {
+                  try {
+                    setError("");
+                    const imageFileIds = await Promise.all(reviewImages.map(uploadReviewImage));
+                    reviewMut.mutate({
                     id: orderId,
                     overallRating,
                     dimensions: Object.keys(dimensionRatings).length > 0 ? dimensionRatings : undefined,
+                    tags: reviewTags.split(/[，,]/).map((tag) => tag.trim()).filter(Boolean).slice(0, 8),
+                    imageFileIds,
                     content: reviewContent.trim() || undefined,
-                  })
-                }
+                    requestId: reviewRequestId,
+                    });
+                  } catch (uploadError) {
+                    setError(uploadError instanceof Error ? uploadError.message : "评价图片上传失败");
+                  }
+                }}
                 loading={reviewMut.isPending}
               />
             </View>
+          </View>
+        ) : null}
+
+        {reviews.length ? (
+          <View className="bg-surface rounded-2xl border border-border p-4 mt-3">
+            <Text className="text-base font-semibold text-foreground mb-2">交易评价</Text>
+            {reviews.map((review) => (
+              <View key={review.id} className="py-3 border-b border-border">
+                <Text className="text-sm font-medium text-warning">{"★".repeat(review.overallRating)}{"☆".repeat(5 - review.overallRating)}</Text>
+                {review.tags?.length ? <Text className="text-xs text-primary mt-1">{review.tags.join(" · ")}</Text> : null}
+                {review.content ? <Text className="text-sm text-foreground mt-1 leading-5">{review.content}</Text> : null}
+                <Text className="text-xs text-muted mt-1">来源：{review.businessSource} · 影响：{review.impactDimension}</Text>
+                {review.reply ? <View className="bg-background rounded-xl p-3 mt-2"><Text className="text-xs text-muted">被评价方回复</Text><Text className="text-sm text-foreground mt-1">{review.reply}</Text></View> : null}
+                {!review.reply && review.reviewerId === otherId ? (
+                  <View className="mt-2">
+                    <AppTextInput placeholder="回复这条评价" value={replyDrafts[review.id] ?? ""} onChangeText={(value) => setReplyDrafts((current) => ({ ...current, [review.id]: value }))} maxLength={500} />
+                    <PrimaryButton small variant="outline" title="提交回复" disabled={(replyDrafts[review.id]?.trim().length ?? 0) < 2} loading={replyMut.isPending} onPress={() => replyMut.mutate({ reviewId: review.id, reply: replyDrafts[review.id]!.trim() })} />
+                  </View>
+                ) : null}
+              </View>
+            ))}
           </View>
         ) : null}
 

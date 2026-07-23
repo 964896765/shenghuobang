@@ -17,6 +17,16 @@ import { verificationsRouter, adminVerificationsRouter } from "./routers/verific
 import { complaintsRouter, adminComplaintsRouter } from "./routers/complaint-router";
 import { adminRouter, auditLogsRouter, platformOperationsRouter } from "./routers/admin-router";
 import { accountProfileRouter, certificationRouter, identityRouter, organizationRouter, workspaceRouter } from "./routers/identity-organization-router";
+import { ideasRouter } from "./routers/ideas-router";
+import { prototypeAcceptancesRouter, projectIntentionsRouter } from "./routers/project-acceptance-intention-router";
+import { designVersionsRouter, prototypeMilestonesRouter } from "./routers/project-design-prototype-router";
+import { fundingCampaignsRouter, fundingPledgesRouter } from "./routers/funding-campaign-router";
+import { productModelsRouter, productUnitsRouter } from "./routers/product-lifecycle-router";
+import { contentRouter } from "./routers/content-router";
+import { commerceRouter } from "./routers/commerce-router";
+import { commerceService } from "./services/commerce-service";
+import { confirmDeliveryTransaction } from "./services/order-service";
+
 import * as verificationService from "./services/verification-service";
 import { listMyCertifications, listMyIdentities, submitIdentityCertification, updateAccountAndPublicProfile } from "./services/identity-service";
 import { switchWorkspace } from "./services/workspace-service";
@@ -167,6 +177,17 @@ export const appRouter = router({
   certification: certificationRouter,
   organization: organizationRouter,
   workspace: workspaceRouter,
+  ideas: ideasRouter,
+  designVersions: designVersionsRouter,
+  prototypeMilestones: prototypeMilestonesRouter,
+  prototypeAcceptances: prototypeAcceptancesRouter,
+  projectIntentions: projectIntentionsRouter,
+  fundingCampaigns: fundingCampaignsRouter,
+  fundingPledges: fundingPledgesRouter,
+  productModels: productModelsRouter,
+  productUnits: productUnitsRouter,
+  content: contentRouter,
+  commerce: commerceRouter,
   location: router({
     me: protectedProcedure.query(async ({ ctx }) => {
       const preference = await db.getLocationPreference(ctx.user.id);
@@ -725,7 +746,7 @@ export const appRouter = router({
       const project = await db.getProject(input.id);
       if (!project) throw new Error("项目不存在");
       const milestoneList = await db.listMilestones(input.id);
-      const [requirements, files, changes, acceptances, projectComplaints, milestoneComplaintGroups, projectOrder] = await Promise.all([
+      const [requirements, files, changes, acceptances, projectComplaints, milestoneComplaintGroups, projectOrder, members, memberAccess] = await Promise.all([
         db.listProjectRequirements(input.id),
         db.listProjectFiles(input.id),
         db.listProjectChanges(input.id),
@@ -733,6 +754,8 @@ export const appRouter = router({
         db.listComplaintsForRelated("project", input.id),
         Promise.all(milestoneList.map((milestone) => db.listComplaintsForRelated("milestone", milestone.id))),
         db.getOrderForReference("project", input.id),
+        db.listActiveProjectMembers(input.id),
+        db.getProjectMemberAccessView(input.id, ctx.user.id),
       ]);
       const allComplaints = [...projectComplaints, ...milestoneComplaintGroups.flat()].sort(
         (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
@@ -749,6 +772,10 @@ export const appRouter = router({
         complaints: allComplaints,
         orderId: projectOrder?.id ?? null,
         profileMap,
+        members,
+        myMembershipId: memberAccess?.membershipId ?? null,
+        myRoleCodes: memberAccess?.roleCodes ?? [],
+        myCapabilityCodes: memberAccess?.capabilityCodes ?? [],
         myRole: project.ownerId === ctx.user.id ? ("owner" as const) : ("engineer" as const),
       };
     }),
@@ -1286,6 +1313,7 @@ export const appRouter = router({
         z.object({
           title: z.string().min(2).max(100),
           category: z.string().max(64).default("家电"),
+          itemId: z.number().int().positive().optional(),
           conditionDesc: z.string().max(1000).optional(),
           expectedPrice: z.number().int().min(0).nullable().optional(),
         }),
@@ -1340,6 +1368,7 @@ export const appRouter = router({
         const profile = await db.ensureProfile(ctx.user.id);
         const merchant = await db.getMerchantByUserId(ctx.user.id);
         const request = await db.getRecyclingRequest(input.requestId);
+        if (request?.userId === ctx.user.id) throw new Error("A merchant cannot quote their own recycling request");
         if (!request) throw new Error("询价单不存在");
         if (!["quoting", "quoted"].includes(request.status)) throw new Error("该询价单已结束");
         const created = await db.createRecyclingQuoteTransaction({
@@ -1409,9 +1438,10 @@ export const appRouter = router({
       if (!order) throw new Error("订单不存在");
       if (order.buyerId !== ctx.user.id && order.sellerId !== ctx.user.id) throw new Error("你不是该订单参与方");
       const logs = await db.listOrderLogs(input.id);
+      const reviewList = await db.listOrderReviews(input.id);
       const profiles = await db.getProfilesByUserIds([order.buyerId, order.sellerId]);
       const profileMap = Object.fromEntries(profiles.map((p) => [p.userId, { nickname: p.nickname }]));
-      return { order, logs, profileMap, myRole: order.buyerId === ctx.user.id ? ("buyer" as const) : ("seller" as const) };
+      return { order, logs, reviews: reviewList, profileMap, myRole: order.buyerId === ctx.user.id ? ("buyer" as const) : ("seller" as const) };
     }),
     pay: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
       const order = await db.getOrder(input.id);
@@ -1420,16 +1450,17 @@ export const appRouter = router({
       throw new Error("直接修改订单状态的模拟支付已停用，请通过支付单和沙箱支付确认流程完成付款");
     }),
     cancel: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
-      const order = await db.cancelOrderTransaction(input.id, ctx.user.id);
+      const order = await commerceService.cancelCommerceOrder(ctx.user.id, input.id) ?? await db.cancelOrderTransaction(input.id, ctx.user.id);
       publishRealtime({ type: "order.updated", userId: order.buyerId === ctx.user.id ? order.sellerId : order.buyerId, payload: { orderId: order.id, status: "cancelled" } });
       return { success: true };
     }),
     confirmDelivery: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
-      const order = await db.getOrder(input.id);
+      const delivery = await confirmDeliveryTransaction(input.id, ctx.user.id);
+      const order = delivery.order;
       if (!order) throw new Error("订单不存在");
       if (order.sellerId !== ctx.user.id) throw new Error("只有卖家可以确认交付");
+      if (!delivery.transitioned) return { success: true };
       if (!["pending_delivery", "pending_confirmation"].includes(order.status)) throw new Error("当前状态不能确认交付");
-      await db.updateOrder(input.id, { status: "pending_acceptance" });
       await db.addOrderLog(input.id, order.status, "pending_acceptance", "卖家已交付,等待买家确认");
       await db.createNotification({
         userId: order.buyerId,
@@ -1445,11 +1476,15 @@ export const appRouter = router({
       const order = await db.completeOrderTransaction(input.id, ctx.user.id);
       await db.addCreditEvent({
         userId: order.sellerId,
+        actorAccountId: ctx.user.id,
         eventType: "order_completed",
         scoreChange: 2,
         reason: "订单顺利完成",
+        businessSource: `order:${order.orderType}`,
+        impactDimension: "fulfillment_reliability",
         refType: "order",
         refId: order.id,
+        requestId: `order-completed:${order.id}`,
       });
       await db.createNotification({
         userId: order.sellerId,
@@ -1468,36 +1503,29 @@ export const appRouter = router({
           id: z.number(),
           overallRating: z.number().int().min(1).max(5),
           dimensions: z.record(z.string(), z.number().int().min(1).max(5)).optional(),
+          tags: z.array(z.string().trim().min(1).max(32)).max(8).default([]),
+          imageFileIds: z.array(z.number().int().positive()).max(6).default([]),
           content: z.string().max(500).optional(),
+          requestId: z.string().min(8).max(64),
         }),
       )
       .mutation(async ({ ctx, input }) => {
-        const order = await db.getOrder(input.id);
-        if (!order) throw new Error("订单不存在");
-        if (order.status !== "completed") throw new Error("订单完成后才能评价");
-        const isBuyer = order.buyerId === ctx.user.id;
-        const isSeller = order.sellerId === ctx.user.id;
-        if (!isBuyer && !isSeller) throw new Error("你不是该订单参与方");
-        if (isBuyer && order.buyerReviewed) throw new Error("你已评价过该订单");
-        if (isSeller && order.sellerReviewed) throw new Error("你已评价过该订单");
-        const revieweeId = isBuyer ? order.sellerId : order.buyerId;
-        await db.createReview({
-          orderId: order.id,
+        const result = await db.createOrderReviewTransaction({
+          orderId: input.id,
           reviewerId: ctx.user.id,
-          revieweeId,
           overallRating: input.overallRating,
           dimensions: input.dimensions,
+          tags: input.tags,
+          imageFileIds: input.imageFileIds,
           content: input.content,
+          requestId: input.requestId,
         });
-        await db.updateOrder(order.id, isBuyer ? { buyerReviewed: true } : { sellerReviewed: true });
-        await db.addCreditEvent({
-          userId: revieweeId,
-          eventType: "review_received",
-          scoreChange: input.overallRating >= 4 ? 1 : input.overallRating <= 2 ? -2 : 0,
-          reason: `收到${input.overallRating}星评价`,
-          refType: "order",
-          refId: order.id,
-        });
+        return { success: true, reviewId: result.review.id, duplicate: result.duplicate };
+      }),
+    replyReview: protectedProcedure
+      .input(z.object({ reviewId: z.number().int().positive(), reply: z.string().trim().min(2).max(500) }))
+      .mutation(async ({ ctx, input }) => {
+        await db.replyToReviewTransaction({ ...input, actorId: ctx.user.id });
         return { success: true };
       }),
   }),

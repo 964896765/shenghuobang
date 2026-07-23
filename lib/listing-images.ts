@@ -86,3 +86,26 @@ export async function uploadListingImage(listingId: number, image: ListingImageD
   }
   return Number(payload.id);
 }
+
+export async function uploadReviewImage(image: ListingImageDraft) {
+  if (image.fileId) return image.fileId;
+  const token = await Auth.getSessionToken();
+  const response = await fetchWithTimeout(`${getApiBaseUrl()}/api/files/upload`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    credentials: "include",
+    body: JSON.stringify({
+      fileName: image.name,
+      mimeType: image.mimeType,
+      base64: await readBase64(image.uri),
+      privacyLevel: "public",
+    }),
+  }, 60_000);
+  const payload = await response.json().catch(() => ({}));
+  if (response.status === 409 && Number.isSafeInteger(payload?.existingFileId)) return Number(payload.existingFileId);
+  if (!response.ok || !Number.isSafeInteger(payload?.id)) throw new Error(payload?.error || "评价图片上传失败，请稍后重试");
+  return Number(payload.id);
+}

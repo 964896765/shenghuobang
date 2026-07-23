@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
+import { assertSafeNamedLocalTestDatabase } from "./mysql-test-config.mjs";
+
 export const A2_MANIFEST_PATH = new URL(
   "../../drizzle/seeds/v33-a2-directory-manifest.json",
   import.meta.url,
@@ -254,42 +256,12 @@ export function anomalyFingerprint({
 }
 
 export function assertSafeA2DatabaseUrl(rawUrl) {
-  if (!rawUrl) {
-    throw new Error(
-      "DATABASE_URL must be explicitly set for the isolated A2 database",
-    );
-  }
-  let parsed;
-  try {
-    parsed = new URL(rawUrl);
-  } catch {
-    throw new Error("DATABASE_URL is not a valid URL");
-  }
-  if (!/^mysql:$/i.test(parsed.protocol)) {
-    throw new Error("DATABASE_URL must use the mysql protocol");
-  }
-  const databaseName = decodeURIComponent(parsed.pathname.replace(/^\//, ""));
-  if (!databaseName) {
-    throw new Error("DATABASE_URL must include a non-empty database name");
-  }
-  const lowerDatabaseName = databaseName.toLowerCase();
-  if (!/(v33a2_empty|v33_a2_empty|test_v33a2)/.test(lowerDatabaseName)) {
-    throw new Error(`Unsafe A2 database name: ${databaseName}`);
-  }
-  if (
-    /(^|[_-])(production|prod|main|shenghuobang)([_-]|$)/.test(
-      lowerDatabaseName,
-    )
-  ) {
-    throw new Error(
-      `Production-like A2 database name is forbidden: ${databaseName}`,
-    );
-  }
-  const localHosts = new Set(["localhost", "127.0.0.1", "::1"]);
-  if (!localHosts.has(parsed.hostname.toLowerCase())) {
-    throw new Error(
-      `Remote database hosts are forbidden for A2.1: ${parsed.hostname}`,
-    );
-  }
-  return { parsed, databaseName };
+  return assertSafeNamedLocalTestDatabase(rawUrl, {
+    consumerName: "A2 isolated database",
+    databaseNamePatterns: [
+      /(^|[_-])(v33a2_empty|v33_a2_empty|test_v33a2)([_-]|$)/,
+      /^shenghuobang_v33_rc\d+(?:_[a-z0-9]+)*$/,
+      /(^|[_-])(test|rc|empty|restore)([_-]|$)/,
+    ],
+  });
 }

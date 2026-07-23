@@ -23,7 +23,7 @@ CREATE TABLE `platform_staff_positions` (
 ALTER TABLE `platform_staff_positions` ADD CONSTRAINT `platform_staff_positions_accountId_users_id_fk` FOREIGN KEY (`accountId`) REFERENCES `users`(`id`) ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE `platform_staff_positions` ADD CONSTRAINT `platform_staff_positions_assignedBy_users_id_fk` FOREIGN KEY (`assignedBy`) REFERENCES `users`(`id`) ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE `platform_staff_positions` ADD CONSTRAINT `platform_staff_positions_revokedBy_users_id_fk` FOREIGN KEY (`revokedBy`) REFERENCES `users`(`id`) ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE `platform_staff_positions` ADD CONSTRAINT `platform_staff_positions_migrationRunId_migration_runs_migrationRunId_fk` FOREIGN KEY (`migrationRunId`) REFERENCES `migration_runs`(`migrationRunId`) ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE `platform_staff_positions` ADD CONSTRAINT `platform_staff_positions_run_fk` FOREIGN KEY (`migrationRunId`) REFERENCES `migration_runs`(`migrationRunId`) ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX `platform_staff_positions_account_status_valid_idx` ON `platform_staff_positions` (`accountId`,`status`,`validUntil`);--> statement-breakpoint
 CREATE INDEX `platform_staff_positions_code_status_idx` ON `platform_staff_positions` (`positionCode`,`status`);--> statement-breakpoint
 CREATE INDEX `platform_staff_positions_migration_run_idx` ON `platform_staff_positions` (`migrationRunId`);

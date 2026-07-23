@@ -414,17 +414,26 @@ export default function NeedDetailScreen() {
 
           {/* 创建者操作 */}
           {isOwner ? (
-            <View className="px-4 mt-4 flex-row gap-3">
-              {!["project_created", "solved", "closed"].includes(need.status) ? (
-                <View className="flex-1">
-                  <PrimaryButton title="关闭需求" variant="muted" onPress={() => setCloseVisible(true)} />
-                </View>
+            <View className="px-4 mt-4 gap-3">
+              {need.status !== "closed" ? (
+                <PrimaryButton
+                  title="发起新品筹措"
+                  variant="outline"
+                  onPress={() => router.push({ pathname: "/funding/new", params: { sourceType: "need", sourceId: String(needId) } } as never)}
+                />
               ) : null}
-              {need.status === "project_created" ? (
-                <View className="flex-1">
-                  <PrimaryButton title="标记为已解决" onPress={() => solvedMut.mutate({ id: needId })} loading={solvedMut.isPending} />
-                </View>
-              ) : null}
+              <View className="flex-row gap-3">
+                {!["project_created", "solved", "closed"].includes(need.status) ? (
+                  <View className="flex-1">
+                    <PrimaryButton title="关闭需求" variant="muted" onPress={() => setCloseVisible(true)} />
+                  </View>
+                ) : null}
+                {need.status === "project_created" ? (
+                  <View className="flex-1">
+                    <PrimaryButton title="标记为已解决" onPress={() => solvedMut.mutate({ id: needId })} loading={solvedMut.isPending} />
+                  </View>
+                ) : null}
+              </View>
             </View>
           ) : null}
         </ScrollView>

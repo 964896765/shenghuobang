@@ -6,6 +6,8 @@ import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerAuthRoutes } from "./auth";
 import { registerStorageProxy } from "./storageProxy";
 import { registerProjectFileAccess } from "./projectFileAccess";
+import { registerProjectDesignPrototypeFileAccess } from "./projectDesignPrototypeFileAccess";
+import { registerIdeaFileAccess } from "./ideaFileAccess";
 import { registerVerificationFileAccess } from "./verificationFileAccess";
 import { registerFileRoutes } from "./fileRoutes";
 import { registerRealtime } from "../realtime";
@@ -70,6 +72,8 @@ export async function startServer() {
 
   registerStorageProxy(app);
   registerProjectFileAccess(app);
+  registerProjectDesignPrototypeFileAccess(app);
+  registerIdeaFileAccess(app);
   registerVerificationFileAccess(app);
   registerFileRoutes(app);
   registerAuthRoutes(app);

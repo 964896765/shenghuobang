@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, or } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, or } from "drizzle-orm";
 import {
   businessIdentities,
   capabilities,
@@ -10,8 +10,14 @@ import {
   complaints,
   conversations,
   engineerVerifications,
+  fundingCampaigns,
+  fundingPledges,
   identityTypes,
   identityVerifications,
+  ideaAttachments,
+  ideaCollaborationInvitations,
+  ideaNdaAcceptances,
+  ideas,
   merchantVerifications,
   milestones,
   needs,
@@ -27,6 +33,8 @@ import {
   projectMembershipRoles,
   projectMemberships,
   projectRoleCapabilities,
+  productModels,
+  productUnits,
   projects,
   quotes,
   refunds,
@@ -66,6 +74,12 @@ const RESOURCE_FIELDS: Record<string, string[]> = {
   refund: ["id", "refundNo", "amount", "reason", "reviewReason", "failedReason", "status"],
   settlement: ["id", "settlementNo", "amount", "frozenReason", "status"],
   stored_file: ["id", "originalName", "storageKey", "mimeType", "sizeBytes", "status"],
+    idea: ["id", "creatorAccountId", "creatorIdentityId", "title", "summary", "description", "categoryCode", "tags", "visibility", "status", "coverFileId", "authorizationVersion", "publishedAt", "convertedProjectId", "createdAt", "updatedAt"],
+  funding_campaign: ["id", "publicCode", "ownerAccountId", "sourceType", "sourceId", "title", "summary", "description", "categoryCode", "coverUrl", "goalQuantity", "pledgedQuantity", "activePledgeCount", "evidence", "verificationSummary", "riskSummary", "visibility", "status", "authorizationVersion", "startsAt", "endsAt", "publishedAt", "closedAt", "createdAt", "updatedAt"],
+  funding_pledge: ["id", "campaignId", "supporterAccountId", "quantity", "note", "cityName", "status", "authorizationVersion", "withdrawnAt", "createdAt", "updatedAt"],
+    idea_attachment: ["id", "ideaId", "fileId", "attachmentType", "confidentialityLevel", "sortOrder", "uploadedBy", "accessPolicyVersion", "originalName", "storageKey", "publicUrl", "permanentUrl", "mimeType", "sizeBytes", "status"],
+  product_model: ["id", "publicCode", "ownerAccountId", "ownerOrganizationId", "name", "summary", "description", "categoryCode", "brandName", "modelCode", "versionLabel", "specifications", "visibility", "status", "authorizationVersion", "publishedAt", "retiredAt", "createdAt", "updatedAt"],
+  product_unit: ["id", "productModelId", "linkedItemId", "currentOwnerAccountId", "publicCode", "serialNumber", "batchCode", "status", "trustLevel", "passportVisibility", "authorizationVersion", "manufacturedAt", "activatedAt", "retiredAt", "createdAt", "updatedAt"],
   audit_event: ["id", "resourceType", "reasonCode", "contextData", "ipAddress", "userAgent"],
 };
 
@@ -81,26 +95,81 @@ const ACCOUNT_SELF_CAPABILITIES = new Set([
   "organization.create",
   "organization.invitation.accept",
   "organization.member.leave",
+  "idea.create",
+  "idea.view_public",
+  "idea.view_private",
+  "idea.edit",
+  "idea.publish",
+  "idea.archive",
+  "idea.attachment.upload",
+  "idea.attachment.download",
+  "idea.collaborator.search",
+  "idea.collaborator.invite",
+  "idea.invitation.accept",
+  "idea.nda.accept",
+  "idea.convert_to_project",
+  "project.intention.register",
+  "project.intention.withdraw",
+  "funding.campaign.create",
+  "funding.campaign.view_public",
+  "funding.campaign.view_owner",
+  "funding.campaign.edit",
+  "funding.campaign.publish",
+  "funding.campaign.close",
+  "funding.pledge.register",
+  "funding.pledge.withdraw",
+  "funding.pledge.view_self",
+  "funding.pledge.view_campaign",
+  "product.model.create",
+  "product.model.view_public",
+  "product.model.view_owner",
+  "product.model.edit",
+  "product.model.publish",
+  "product.model.retire",
+  "product.unit.register",
+  "product.unit.view_public",
+  "product.unit.view_owner",
+  "product.unit.link_item",
+  "product.unit.transition",
+  "product.passport.append",
+  "product.passport.view_public",
+  "product.passport.view_owner",
 ]);
 
 const ENGINEER_CERTIFICATION_CAPABILITIES = new Set(["quote.submit", "project.milestone.submit"]);
 const LEGACY_OWNER_CAPABILITIES = new Set([
   "project.view", "project.requirement.edit", "project.file.upload", "project.file.download", "project.file.disable",
   "project.milestone.accept", "project.milestone.request_revision", "project.change.propose", "project.change.approve",
+  "project.design_version.create", "project.design_version.edit", "project.design_version.submit", "project.design_version.view",
+  "project.design_file.upload", "project.design_file.download",
+  "project.milestone.create", "project.milestone.edit", "project.milestone.assign", "project.milestone.start", "project.milestone.submit_deliverable",
+  "project.prototype_acceptance.view", "project.prototype_acceptance.review", "project.prototype_acceptance.accept", "project.prototype_acceptance.request_revision",
+  "project.prototype_revision.submit", "project.intention.view_project",
 ]);
 const LEGACY_ENGINEER_CAPABILITIES = new Set([
   "project.view", "project.requirement.edit", "project.file.upload", "project.file.download", "project.file.disable",
   "project.milestone.submit", "project.change.propose",
+  "project.design_version.create", "project.design_version.edit", "project.design_version.submit", "project.design_version.view",
+  "project.design_file.upload", "project.design_file.download",
+  "project.milestone.start", "project.milestone.submit_deliverable",
+  "project.prototype_acceptance.view", "project.prototype_revision.submit",
 ]);
 export const PROJECT_ROLE_FROZEN_CAPABILITIES: Readonly<Record<string, ReadonlySet<string>>> = {
   initiator: new Set([...LEGACY_OWNER_CAPABILITIES, "message.start", "message.read", "message.send"]),
   project_lead: new Set([...LEGACY_OWNER_CAPABILITIES, "message.start", "message.read", "message.send"]),
   engineer: new Set([...LEGACY_ENGINEER_CAPABILITIES, "message.start", "message.read", "message.send"]),
-  design_lead: new Set(["project.view", "project.file.upload", "project.file.download", "project.change.propose", "message.start", "message.read", "message.send"]),
+  design_lead: new Set([
+    "project.view", "project.file.upload", "project.file.download", "project.change.propose",
+    "project.design_version.create", "project.design_version.edit", "project.design_version.submit", "project.design_version.view",
+    "project.design_file.upload", "project.design_file.download",
+    "project.milestone.start", "project.milestone.submit_deliverable",
+    "project.prototype_acceptance.view", "project.prototype_revision.submit",
+    "message.start", "message.read", "message.send",
+  ]),
   supplier: new Set(["project.view", "project.file.upload", "project.file.download", "message.start", "message.read", "message.send"]),
   manufacturer: new Set(["project.view", "project.file.upload", "project.file.download", "message.start", "message.read", "message.send"]),
-  inspector: new Set(["project.view", "project.file.download", "project.milestone.request_revision", "message.read"]),
-  reviewer: new Set(["project.view", "project.file.download", "project.milestone.accept", "project.milestone.request_revision", "message.read"]),
+  inspector: new Set(["project.view", "project.file.download", "project.milestone.request_revision", "project.prototype_acceptance.view", "project.prototype_acceptance.review", "project.prototype_acceptance.request_revision", "message.read"]),
+  reviewer: new Set(["project.view", "project.file.download", "project.milestone.accept", "project.milestone.request_revision", "project.prototype_acceptance.view", "project.prototype_acceptance.review", "project.prototype_acceptance.accept", "project.prototype_acceptance.request_revision", "message.read"]),
   viewer: new Set(["project.view", "project.file.download", "message.read"]),
 };
 
@@ -210,13 +279,35 @@ function confidentiality(value?: string | null): Confidentiality {
 }
 
 function allowedStatuses(capabilityCode: string, current: string): string[] {
-  if (capabilityCode === "file.access" || capabilityCode === "project.file.download") return ["available"];
+  if (capabilityCode === "idea.view_public" || capabilityCode === "idea.view_private" || capabilityCode === "idea.attachment.download") return [current];
+  if (capabilityCode === "idea.edit" || capabilityCode === "idea.publish") return ["draft"];
+  if (capabilityCode === "idea.archive") return ["draft", "published", "collaborating", "converted", "archived"];
+  if (capabilityCode === "idea.attachment.upload" || capabilityCode === "idea.collaborator.invite" || capabilityCode === "idea.collaborator.search") return ["draft", "published", "collaborating"];
+  if (capabilityCode === "idea.invitation.accept" || capabilityCode === "idea.nda.accept") return ["published", "collaborating"];
+    if (capabilityCode === "idea.convert_to_project") return ["published", "collaborating", "converted"];
+  if (["product.model.view_public", "product.model.view_owner"].includes(capabilityCode)) return [current];
+  if (capabilityCode === "product.model.edit") return ["draft", "active"];
+  if (capabilityCode === "product.model.publish") return ["draft", "active"];
+  if (capabilityCode === "product.model.retire") return ["active", "retired"];
+  if (capabilityCode === "product.unit.register") return ["active"];
+  if (["product.unit.view_public", "product.unit.view_owner", "product.passport.view_public", "product.passport.view_owner", "product.passport.view_internal"].includes(capabilityCode)) return [current];
+  if (capabilityCode === "product.unit.link_item") return ["registered", "manufactured", "in_use", "idle"];
+  if (["product.unit.transition", "product.passport.append"].includes(capabilityCode)) return ["registered", "manufactured", "in_use", "idle", "listed", "under_service", "transferred", "recycling", "recycled"];
+  if (capabilityCode === "file.access" || capabilityCode === "project.file.download" || capabilityCode === "project.design_file.download") return ["available"];
   if (capabilityCode.endsWith(".view") || capabilityCode.endsWith(".read") || capabilityCode.endsWith(".download")) return [current];
+  if (["project.design_version.create", "project.design_version.edit", "project.design_version.submit", "project.design_file.upload", "project.milestone.create"].includes(capabilityCode)) {
+    return ["pending_confirmation", "pending_agreement", "pending_payment", "in_progress", "waiting_acceptance", "revision"];
+  }
   if (capabilityCode === "project.requirement.edit") return ["pending_confirmation", "pending_agreement", "in_progress", "revision"];
   if (capabilityCode === "project.file.upload") return ["pending_confirmation", "pending_agreement", "pending_payment", "in_progress", "waiting_acceptance", "revision", "paused"];
   if (capabilityCode === "project.file.disable") return ["available"];
   if (capabilityCode === "project.milestone.submit") return ["in_progress", "revision_required"];
+  if (capabilityCode === "project.milestone.edit" || capabilityCode === "project.milestone.assign" || capabilityCode === "project.milestone.start") return ["pending"];
+  if (capabilityCode === "project.milestone.submit_deliverable") return ["in_progress"];
   if (capabilityCode === "project.milestone.accept" || capabilityCode === "project.milestone.request_revision") return ["submitted", "waiting_acceptance"];
+  if (capabilityCode === "project.prototype_revision.submit") return ["submitted"];
+  if (["project.prototype_acceptance.view", "project.prototype_acceptance.review", "project.prototype_acceptance.accept", "project.prototype_acceptance.request_revision"].includes(capabilityCode)) return ["submitted"];
+  if (capabilityCode === "project.intention.view_project") return ["pending_confirmation", "pending_agreement", "pending_payment", "in_progress", "waiting_acceptance", "revision", "paused", "completed"];
   if (capabilityCode === "project.change.propose") return ["in_progress", "waiting_acceptance", "revision", "paused", "pending_confirmation"];
   if (capabilityCode === "project.change.approve") return ["pending_confirmation"];
   if (capabilityCode === "quote.submit") return ["published", "collecting_solutions", "selecting_quote", "submitted", "viewed", "negotiating"];
@@ -250,11 +341,12 @@ export class DrizzleAuthorizationDataSource implements AuthorizationDataSource {
     }).from(workspacePreferences)
       .where(eq(workspacePreferences.accountId, request.accountId)).limit(1);
 
+    const capabilityLookupCode = request.capabilityCode === "idea.collaborator.search" ? "idea.collaborator.invite" : request.capabilityCode;
     const [capabilityRow] = await db.select({
       code: capabilities.code,
       status: capabilities.status,
       riskLevel: capabilities.riskLevel,
-    }).from(capabilities).where(and(eq(capabilities.code, request.capabilityCode), isNull(capabilities.deletedAt))).limit(1);
+    }).from(capabilities).where(and(eq(capabilities.code, capabilityLookupCode), isNull(capabilities.deletedAt))).limit(1);
 
     const requiredCertificationCodes = ENGINEER_CERTIFICATION_CAPABILITIES.has(request.capabilityCode) ? ["engineer_basic"] : [];
     let identityId = request.identityId ?? (workspacePreference?.workspaceType === "identity" ? workspacePreference.identityId : null);
@@ -415,6 +507,44 @@ export class DrizzleAuthorizationDataSource implements AuthorizationDataSource {
     if (resource?.resourceType === "conversation" && resource.memberAccountIds?.includes(request.accountId)) {
       assignments.push({ capabilityCode: request.capabilityCode, sourceType: "ACCOUNT_SELF", subjectId: request.accountId, status: "active", dataScope: "INVITED_RESOURCE" });
     }
+    if (resource && (resource.resourceType === "idea" || resource.resourceType === "idea_attachment")) {
+      const isOwner = resource.ownerAccountId === request.accountId;
+      const isAcceptedCollaborator = resource.memberAccountIds?.includes(request.accountId) === true;
+      const isPendingInvitee = resource.pendingInviteeAccountIds?.includes(request.accountId) === true;
+      const preFlow = ["idea.invitation.accept", "idea.nda.accept"].includes(request.capabilityCode) ||
+        (resource.resourceType === "idea" && request.capabilityCode === "idea.view_private" && resource.ndaRequired === true);
+      if (isOwner) {
+        assignments.push({ capabilityCode: request.capabilityCode, sourceType: "ACCOUNT_SELF", subjectId: request.accountId, status: "active", dataScope: "OWNED_RESOURCE", allowedFields: [] });
+      } else if (request.capabilityCode === "idea.view_public" && resource.public) {
+        assignments.push({ capabilityCode: request.capabilityCode, sourceType: "ACCOUNT_SELF", subjectId: request.accountId, status: "active", dataScope: "PUBLIC", allowedFields: [] });
+      } else if (isAcceptedCollaborator || (preFlow && isPendingInvitee)) {
+        assignments.push({ capabilityCode: request.capabilityCode, sourceType: "ACCOUNT_SELF", subjectId: request.accountId, status: "active", dataScope: "INVITED_RESOURCE", allowedFields: [] });
+      }
+    }
+    if (resource && (resource.resourceType === "funding_campaign" || resource.resourceType === "funding_pledge")) {
+      const publicCapabilities = new Set(["funding.campaign.view_public", "funding.pledge.register"]);
+      const isOwner = resource.ownerAccountId === request.accountId;
+      const isCampaignManager = resource.memberAccountIds?.includes(request.accountId) === true;
+      if (isOwner) {
+        assignments.push({ capabilityCode: request.capabilityCode, sourceType: "ACCOUNT_SELF", subjectId: request.accountId, status: "active", dataScope: "OWNED_RESOURCE", allowedFields: [] });
+      } else if (publicCapabilities.has(request.capabilityCode) && resource.public) {
+        assignments.push({ capabilityCode: request.capabilityCode, sourceType: "ACCOUNT_SELF", subjectId: request.accountId, status: "active", dataScope: "PUBLIC", allowedFields: [] });
+      } else if (isCampaignManager && request.capabilityCode === "funding.pledge.view_campaign") {
+        assignments.push({ capabilityCode: request.capabilityCode, sourceType: "ACCOUNT_SELF", subjectId: request.accountId, status: "active", dataScope: "INVITED_RESOURCE", allowedFields: [] });
+      }
+    }
+    if (resource && (resource.resourceType === "product_model" || resource.resourceType === "product_unit")) {
+      const publicCapabilities = new Set(["product.model.view_public", "product.unit.view_public", "product.passport.view_public"]);
+      const isOwner = resource.ownerAccountId === request.accountId;
+      const isLifecycleMember = resource.memberAccountIds?.includes(request.accountId) === true;
+      if (isOwner) {
+        assignments.push({ capabilityCode: request.capabilityCode, sourceType: "ACCOUNT_SELF", subjectId: request.accountId, status: "active", dataScope: "OWNED_RESOURCE", allowedFields: [] });
+      } else if (publicCapabilities.has(request.capabilityCode) && resource.public) {
+        assignments.push({ capabilityCode: request.capabilityCode, sourceType: "ACCOUNT_SELF", subjectId: request.accountId, status: "active", dataScope: "PUBLIC", allowedFields: [] });
+      } else if (isLifecycleMember) {
+        assignments.push({ capabilityCode: request.capabilityCode, sourceType: "ACCOUNT_SELF", subjectId: request.accountId, status: "active", dataScope: "INVITED_RESOURCE", allowedFields: [] });
+      }
+    }
     if (resource?.resourceType === "project" && request.capabilityCode === "message.start" && resource.memberAccountIds?.includes(request.accountId)) {
       assignments.push({ capabilityCode: request.capabilityCode, sourceType: "ACCOUNT_SELF", subjectId: request.accountId, status: "active", dataScope: "INVITED_RESOURCE" });
     }
@@ -432,11 +562,11 @@ export class DrizzleAuthorizationDataSource implements AuthorizationDataSource {
       });
     }
 
-    const ndaAccepted = projectMembershipRow?.status === "active" && ["NDA", "RESTRICTED"].includes(projectMembershipRow.clearance ?? "");
+    const ndaAccepted = resource?.ndaAccepted ?? (projectMembershipRow?.status === "active" && ["NDA", "RESTRICTED"].includes(projectMembershipRow.clearance ?? ""));
     return {
       account: accountRow ? { id: accountRow.id, status: accountRow.status, legacyRole: accountRow.legacyRole, currentRole: accountRow.currentRole ?? undefined } : null,
       capability: capabilityRow ? {
-        code: capabilityRow.code,
+        code: request.capabilityCode,
         status: capabilityRow.status,
         highRisk: capabilityRow.riskLevel === "high",
         requiredCertificationCodes,
@@ -464,9 +594,159 @@ export class DrizzleAuthorizationDataSource implements AuthorizationDataSource {
       allowedStatuses: allowedStatuses(request.capabilityCode, status), confidentiality: "INTERNAL",
       availableFields: resourceFieldsFor(request.resourceType!), ...extra,
     });
+    if (request.resourceType === "funding_campaign") {
+      const [row] = await db.select({
+        ownerAccountId: fundingCampaigns.ownerAccountId,
+        status: fundingCampaigns.status,
+        visibility: fundingCampaigns.visibility,
+        authorizationVersion: fundingCampaigns.authorizationVersion,
+        deletedAt: fundingCampaigns.deletedAt,
+      }).from(fundingCampaigns).where(eq(fundingCampaigns.id, id)).limit(1);
+      if (!row || row.deletedAt) return null;
+      const isPublic = row.visibility === "public" && ["active", "succeeded", "failed", "cancelled", "closed"].includes(row.status);
+      return base(row.status, {
+        ownerAccountId: row.ownerAccountId,
+        public: isPublic,
+        confidentiality: isPublic ? "PUBLIC" : "INTERNAL",
+        version: row.authorizationVersion,
+      });
+    }
+    if (request.resourceType === "funding_pledge") {
+      const [row] = await db.select({
+        supporterAccountId: fundingPledges.supporterAccountId,
+        campaignOwnerAccountId: fundingCampaigns.ownerAccountId,
+        status: fundingPledges.status,
+        authorizationVersion: fundingPledges.authorizationVersion,
+      }).from(fundingPledges).innerJoin(fundingCampaigns, eq(fundingCampaigns.id, fundingPledges.campaignId))
+        .where(eq(fundingPledges.id, id)).limit(1);
+      if (!row) return null;
+      return base(row.status, {
+        ownerAccountId: row.supporterAccountId,
+        memberAccountIds: [row.campaignOwnerAccountId],
+        public: false,
+        confidentiality: "INTERNAL",
+        version: row.authorizationVersion,
+      });
+    }
+    if (request.resourceType === "product_model") {
+      const [row] = await db.select({
+        id: productModels.id,
+        ownerAccountId: productModels.ownerAccountId,
+        ownerOrganizationId: productModels.ownerOrganizationId,
+        status: productModels.status,
+        visibility: productModels.visibility,
+        authorizationVersion: productModels.authorizationVersion,
+        deletedAt: productModels.deletedAt,
+      }).from(productModels).where(eq(productModels.id, id)).limit(1);
+      if (!row || row.deletedAt) return null;
+      const isPublic = row.visibility === "public" && row.status === "active";
+      return base(row.status, {
+        ownerAccountId: row.ownerAccountId,
+        organizationId: row.ownerOrganizationId ?? undefined,
+        public: isPublic,
+        confidentiality: isPublic ? "PUBLIC" : row.visibility === "restricted" ? "CONFIDENTIAL" : "INTERNAL",
+        version: row.authorizationVersion,
+      });
+    }
+    if (request.resourceType === "product_unit") {
+      const [row] = await db.select({
+        id: productUnits.id,
+        modelOwnerAccountId: productModels.ownerAccountId,
+        ownerOrganizationId: productModels.ownerOrganizationId,
+        modelStatus: productModels.status,
+        modelVisibility: productModels.visibility,
+        currentOwnerAccountId: productUnits.currentOwnerAccountId,
+        status: productUnits.status,
+        passportVisibility: productUnits.passportVisibility,
+        authorizationVersion: productUnits.authorizationVersion,
+      }).from(productUnits).innerJoin(productModels, eq(productModels.id, productUnits.productModelId))
+        .where(eq(productUnits.id, id)).limit(1);
+      if (!row) return null;
+      const ownerAccountId = row.currentOwnerAccountId ?? row.modelOwnerAccountId;
+      const memberAccountIds = row.modelOwnerAccountId === ownerAccountId ? [ownerAccountId] : [ownerAccountId, row.modelOwnerAccountId];
+      const isPublic = row.passportVisibility === "public" && row.modelVisibility === "public" && row.modelStatus === "active";
+      return base(row.status, {
+        ownerAccountId,
+        memberAccountIds,
+        organizationId: row.ownerOrganizationId ?? undefined,
+        public: isPublic,
+        confidentiality: isPublic ? "PUBLIC" : row.passportVisibility === "restricted" ? "CONFIDENTIAL" : "INTERNAL",
+        version: row.authorizationVersion,
+      });
+    }
     if (request.resourceType === "project") {
       const [row] = await db.select().from(projects).where(eq(projects.id, id)).limit(1);
       return row ? base(row.status, { ownerAccountId: row.ownerId, projectId: row.id, memberAccountIds: [row.ownerId, row.engineerId], version: row.authorizationVersion }) : null;
+    }
+    if (request.resourceType === "idea" || request.resourceType === "idea_attachment") {
+      const attachmentId = request.resourceType === "idea_attachment" ? id : null;
+      const [attachment] = attachmentId == null ? [] : await db.select({
+        id: ideaAttachments.id,
+        ideaId: ideaAttachments.ideaId,
+        fileId: ideaAttachments.fileId,
+        confidentialityLevel: ideaAttachments.confidentialityLevel,
+        accessPolicyVersion: ideaAttachments.accessPolicyVersion,
+        disabledAt: ideaAttachments.disabledAt,
+        storedFileStatus: storedFiles.status,
+        storedFilePolicyVersion: storedFiles.accessPolicyVersion,
+      }).from(ideaAttachments).innerJoin(storedFiles, eq(storedFiles.id, ideaAttachments.fileId))
+        .where(eq(ideaAttachments.id, attachmentId!)).limit(1);
+      if (attachmentId != null && !attachment) return null;
+      const ideaId = attachment?.ideaId ?? id;
+      const [idea] = await db.select({
+        id: ideas.id,
+        creatorAccountId: ideas.creatorAccountId,
+        creatorIdentityId: ideas.creatorIdentityId,
+        visibility: ideas.visibility,
+        status: ideas.status,
+        authorizationVersion: ideas.authorizationVersion,
+        convertedProjectId: ideas.convertedProjectId,
+        deletedAt: ideas.deletedAt,
+      }).from(ideas).where(eq(ideas.id, ideaId)).limit(1);
+      if (!idea || idea.deletedAt) return null;
+      const now = new Date();
+      const invitations = await db.select({
+        accountId: ideaCollaborationInvitations.invitedAccountId,
+        identityId: ideaCollaborationInvitations.invitedIdentityId,
+        status: ideaCollaborationInvitations.status,
+        expiresAt: ideaCollaborationInvitations.expiresAt,
+        ndaRequired: ideaCollaborationInvitations.ndaRequired,
+      }).from(ideaCollaborationInvitations).where(eq(ideaCollaborationInvitations.ideaId, idea.id));
+      const acceptedAccountIds = [...new Set(invitations.filter((row) => row.status === "accepted").map((row) => row.accountId))];
+      const pendingAccountIds = [...new Set(invitations.filter((row) => row.status === "pending" && row.expiresAt.getTime() > now.getTime()).map((row) => row.accountId))];
+      const accountInvitations = invitations.filter((row) => row.accountId === request.accountId &&
+        (row.status === "accepted" || (row.status === "pending" && row.expiresAt.getTime() > now.getTime())));
+      const ndaRequired = idea.visibility === "nda" || accountInvitations.some((row) => row.ndaRequired) || attachment?.confidentialityLevel === "NDA";
+      const activeIdentityIds = [...new Set(accountInvitations.map((row) => row.identityId))];
+      const [ndaAcceptance] = request.accountId === idea.creatorAccountId || !ndaRequired ? [{ id: -1 }] : await db.select({ id: ideaNdaAcceptances.id })
+        .from(ideaNdaAcceptances).where(and(
+          eq(ideaNdaAcceptances.ideaId, idea.id),
+          eq(ideaNdaAcceptances.accountId, request.accountId),
+          activeIdentityIds.length > 0 ? inArray(ideaNdaAcceptances.identityId, activeIdentityIds) : undefined,
+          isNull(ideaNdaAcceptances.revokedAt),
+        )).limit(1);
+      const invitationPreFlow = request.capabilityCode === "idea.nda.accept" || request.capabilityCode === "idea.invitation.accept";
+      const common: Partial<ResourceFact> = {
+        ownerAccountId: idea.creatorAccountId,
+        memberAccountIds: acceptedAccountIds,
+        pendingInviteeAccountIds: pendingAccountIds,
+        public: idea.visibility === "public" && ["published", "collaborating", "converted"].includes(idea.status),
+        confidentiality: invitationPreFlow ? "PUBLIC" : attachment ? confidentiality(attachment.confidentialityLevel) : ndaRequired ? "NDA" : idea.visibility === "public" ? "PUBLIC" : "INTERNAL",
+        ndaRequired: invitationPreFlow ? false : ndaRequired,
+        ndaAccepted: request.accountId === idea.creatorAccountId || !ndaRequired || Boolean(accountInvitations.length > 0 && ndaAcceptance),
+        memberConfidentialityClearance: ndaRequired ? "NDA" : "CONFIDENTIAL",
+        projectId: idea.convertedProjectId ?? undefined,
+      };
+      if (!attachment) return base(idea.status, { ...common, version: idea.authorizationVersion });
+      const attachmentStatus = attachment.disabledAt || attachment.storedFileStatus !== "available" ? "disabled" : "available";
+      return base(attachmentStatus, {
+        ...common,
+        resourceType: "idea_attachment",
+        resourceId: String(attachment.id),
+        status: attachmentStatus,
+        allowedStatuses: ["available"],
+        version: attachment.accessPolicyVersion,
+      });
     }
     if (request.resourceType === "identity") {
       const [row] = await db.select({

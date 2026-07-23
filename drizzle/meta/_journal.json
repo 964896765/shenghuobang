@@ -211,6 +211,62 @@
       "when": 1784426953790,
       "tag": "0029_v33_a2_cyclic_invitation_foreign_keys",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "5",
+      "when": 1784454286992,
+      "tag": "0030_v33_b1_ideas_collaboration",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "5",
+      "when": 1784523962434,
+      "tag": "0031_v33_b2_design_prototype",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "5",
+      "when": 1784523962435,
+      "tag": "0032_v33_b3_acceptance_intent",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "5",
+      "when": 1784640686472,
+      "tag": "0033_v4_product_core",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "5",
+      "when": 1784643845293,
+      "tag": "0034_v4_funding_campaigns",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "5",
+      "when": 1784659225036,
+      "tag": "0035_skinny_clint_barton",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "5",
+      "when": 1784661199525,
+      "tag": "0036_faithful_dreaming_celestial",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "5",
+      "when": 1784679210045,
+      "tag": "0037_complete_nuke",
+      "breakpoints": true
     }
   ]
 }

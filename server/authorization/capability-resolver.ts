@@ -70,7 +70,9 @@ export function dataScopeMatches(request: AuthorizationRequest, facts: Authoriza
     case "ORGANIZATION": return Boolean(request.organizationId && facts.organizationMembership?.status === "active" && resource?.organizationId === request.organizationId);
     case "PROJECT": return Boolean(request.projectId && facts.projectMembership?.status === "active" && resource?.projectId === request.projectId);
     case "ASSIGNED_RESOURCE": return resource?.assigneeAccountId === request.accountId;
-    case "INVITED_RESOURCE": return Boolean(resource?.memberAccountIds?.includes(request.accountId));
+    case "INVITED_RESOURCE": return Boolean(resource?.memberAccountIds?.includes(request.accountId) ||
+      (["idea.invitation.accept", "idea.nda.accept"].includes(request.capabilityCode) && resource?.pendingInviteeAccountIds?.includes(request.accountId)) ||
+      (request.capabilityCode === "idea.view_private" && resource?.ndaRequired && resource.pendingInviteeAccountIds?.includes(request.accountId)));
     case "PUBLIC": return resource?.public === true;
     case "CITY_OR_REGION": return resource?.public === true;
   }

@@ -68,6 +68,11 @@ describe("V3.2.1 signed file access", () => {
     expect(verifyFileAccess(claims, signature, secret, 2_100_000_000_000)).toBe(false);
     expect(verifyFileAccess(claims, "bad", secret, 1_900_000_000_000)).toBe(false);
   });
+  it("accepts numeric policy versions used by stored files", () => {
+    const numericClaims: FileAccessClaims = { ...claims, version: "1" };
+    const signature = signFileAccess(numericClaims, secret);
+    expect(verifyFileAccess(numericClaims, signature, secret, 1_900_000_000_000)).toBe(true);
+  });
 });
 
 describe("V3.2.1 upload content validation", () => {

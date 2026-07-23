@@ -1,214 +1,76 @@
-import React, { useState } from "react";
-import { FlatList, Pressable, RefreshControl, Text, View } from "react-native";
+import { useEffect, useState } from "react";
+import { FlatList, Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 
+import { type ContentCardData, ContentCard } from "@/components/content-card";
+import { EmptyState, ErrorState, LoadingView } from "@/components/common";
 import { ScreenContainer } from "@/components/screen-container";
+import { startLogin } from "@/constants/app";
+import { useGlobalLocation } from "@/lib/location-context";
 import { useRole } from "@/lib/role-context";
 import { trpc } from "@/lib/trpc";
-import { NeedCard, EngineerCard, ListingCard } from "@/components/cards";
-import { EmptyState, ErrorState, LoadingView, StatusBadge, AppTextInput } from "@/components/common";
-import { AuthGate } from "@/components/auth-gate";
-import { RECYCLING_STATUS, formatTime } from "@/lib/labels";
-import { USER_DISCOVER_TABS } from "@/lib/discover-tabs";
-import { ForegroundLocationCard } from "@/components/foreground-location-card";
-import { useForegroundLocation } from "@/hooks/use-foreground-location";
+import { DISCOVER_CHANNELS } from "@/shared/navigation/appNavigation";
 
-function TabBar({ tabs, active, onChange }: { tabs: readonly { key: string; label: string }[]; active: string; onChange: (k: string) => void }) {
-  return (
-    <View className="flex-row px-4 gap-2 pb-2">
-      {tabs.map((t) => (
-        <Pressable key={t.key} onPress={() => onChange(t.key)} style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
-          <View className={t.key === active ? "bg-primary rounded-full px-4 py-1.5" : "bg-surface border border-border rounded-full px-4 py-1.5"}>
-            <Text className={t.key === active ? "text-white text-sm font-medium" : "text-foreground text-sm"}>{t.label}</Text>
-          </View>
-        </Pressable>
-      ))}
-    </View>
-  );
-}
-
-function UserDiscover() {
-  const router = useRouter();
-  const params = useLocalSearchParams<{ tab?: string }>();
-  const [tab, setTab] = useState<string>(params.tab ?? "needs");
-  const [keyword, setKeyword] = useState("");
-  const location = useForegroundLocation();
-
-  const needs = trpc.needs.list.useQuery({ scope: "plaza", keyword: keyword || undefined, ...location.queryInput }, { enabled: tab === "needs" });
-  const engineers = trpc.engineers.list.useQuery({ keyword: keyword || undefined, ...location.queryInput }, { enabled: tab === "engineers" });
-  const listings = trpc.listings.list.useQuery(
-    { scope: "market", keyword: keyword || undefined, mode: tab === "giveaway" ? "giveaway" : undefined, ...location.queryInput },
-    { enabled: tab === "listings" || tab === "giveaway" },
-  );
-  const openRequests = trpc.recycling.openRequests.useQuery(location.queryInput, { enabled: tab === "recycling" });
-
-  const loading = needs.isLoading || engineers.isLoading || listings.isLoading || openRequests.isLoading;
-  const activeQuery = tab === "needs" ? needs : tab === "engineers" ? engineers : tab === "recycling" ? openRequests : listings;
-
-  return (
-    <View className="flex-1">
-      <View className="px-4 pt-2 pb-3">
-        <Text className="text-2xl font-bold text-foreground mb-3">发现</Text>
-        <AppTextInput placeholder="搜索需求、工程师或物品" value={keyword} onChangeText={setKeyword} />
-      </View>
-      <ForegroundLocationCard compact controller={location} />
-      <TabBar tabs={USER_DISCOVER_TABS} active={tab} onChange={setTab} />
-      {loading ? (
-        <LoadingView />
-      ) : activeQuery.isError ? (
-        <ErrorState title="加载失败" hint={activeQuery.error.message} onRetry={() => activeQuery.refetch()} />
-      ) : tab === "needs" ? (
-        <FlatList
-          data={needs.data ?? []}
-          keyExtractor={(i) => String(i.id)}
-          renderItem={({ item }) => <NeedCard need={item} />}
-          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}
-          refreshControl={<RefreshControl refreshing={needs.isRefetching} onRefresh={() => needs.refetch()} />}
-          ListEmptyComponent={<EmptyState title="暂无需求" hint="附近还没有公开需求,发布一个试试。" />}
-        />
-      ) : tab === "engineers" ? (
-        <FlatList
-          data={engineers.data ?? []}
-          keyExtractor={(i) => String(i.userId)}
-          renderItem={({ item }) => <EngineerCard engineer={item} />}
-          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}
-          refreshControl={<RefreshControl refreshing={engineers.isRefetching} onRefresh={() => engineers.refetch()} />}
-          ListEmptyComponent={<EmptyState title="暂无工程师" hint="附近的认证工程师会显示在这里。" />}
-        />
-      ) : tab === "recycling" ? (
-        <FlatList
-          data={openRequests.data ?? []}
-          keyExtractor={(item) => String(item.id)}
-          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}
-          refreshControl={<RefreshControl refreshing={openRequests.isRefetching} onRefresh={() => openRequests.refetch()} />}
-          ListEmptyComponent={<EmptyState title="暂无回收询价" hint="已发布的回收询价会显示在这里。" />}
-          renderItem={({ item }) => {
-            const status = RECYCLING_STATUS[item.status] ?? { label: item.status, tone: "gray" as const };
-            return (
-              <Pressable
-                onPress={() => router.push(`/recycling/${item.id}` as any)}
-                style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
-              >
-                <View className="bg-surface rounded-2xl p-4 mb-3 border border-border">
-                  <View className="flex-row items-center justify-between mb-1.5">
-                    <StatusBadge label={status.label} tone={status.tone} small />
-                    <Text className="text-xs text-muted">{formatTime(item.createdAt)}</Text>
-                  </View>
-                  <Text className="text-base font-semibold text-foreground" numberOfLines={1}>{item.title}</Text>
-                  <View className="flex-row items-center gap-2 mt-1">
-                    <Text className="text-xs text-muted">{item.category}</Text>
-                    <Text className="text-xs text-muted">{item.cityName}</Text>
-                    {item.expectedPrice ? <Text className="text-xs text-action">期望 ¥{item.expectedPrice}</Text> : null}
-                    {item.distanceLabel ? <Text className="text-xs text-primary">{item.distanceLabel}</Text> : null}
-                  </View>
-                </View>
-              </Pressable>
-            );
-          }}
-        />
-      ) : (
-        <FlatList
-          data={listings.data ?? []}
-          keyExtractor={(i) => String(i.id)}
-          renderItem={({ item }) => <ListingCard listing={item} />}
-          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}
-          refreshControl={<RefreshControl refreshing={listings.isRefetching} onRefresh={() => listings.refetch()} />}
-          ListEmptyComponent={<EmptyState title="暂无物品" hint={tab === "giveaway" ? "还没有免费赠送的物品。" : "附近还没有在售物品。"} />}
-        />
-      )}
-    </View>
-  );
-}
-
-function EngineerHall() {
-  const [keyword, setKeyword] = useState("");
-  const location = useForegroundLocation();
-  const needs = trpc.needs.list.useQuery({ scope: "plaza", keyword: keyword || undefined, ...location.queryInput });
-  return (
-    <View className="flex-1">
-      <View className="px-4 pt-2 pb-3">
-        <Text className="text-2xl font-bold text-foreground mb-3">需求大厅</Text>
-        <AppTextInput placeholder="搜索需求关键词" value={keyword} onChangeText={setKeyword} />
-      </View>
-      <ForegroundLocationCard compact controller={location} />
-      {needs.isLoading ? (
-        <LoadingView />
-      ) : needs.isError ? (
-        <ErrorState title="无法加载需求" hint={needs.error.message} onRetry={() => needs.refetch()} />
-      ) : (
-        <FlatList
-          data={needs.data ?? []}
-          keyExtractor={(i) => String(i.id)}
-          renderItem={({ item }) => <NeedCard need={item} />}
-          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}
-          refreshControl={<RefreshControl refreshing={needs.isRefetching} onRefresh={() => needs.refetch()} />}
-          ListEmptyComponent={<EmptyState title="暂无公开需求" hint="有新需求发布时会显示在这里。" />}
-        />
-      )}
-    </View>
-  );
-}
-
-function MerchantInquiries() {
-  const router = useRouter();
-  const location = useForegroundLocation();
-  const openRequests = trpc.recycling.openRequests.useQuery(location.queryInput);
-  return (
-    <View className="flex-1">
-      <View className="px-4 pt-2 pb-3">
-        <Text className="text-2xl font-bold text-foreground">附近询价</Text>
-        <Text className="text-sm text-muted mt-1">用户发布的回收询价,提交报价争取订单</Text>
-      </View>
-      <ForegroundLocationCard compact controller={location} />
-      {openRequests.isLoading ? (
-        <LoadingView />
-      ) : openRequests.isError ? (
-        <ErrorState title="无法加载回收询价" hint={openRequests.error.message} onRetry={() => openRequests.refetch()} />
-      ) : (
-        <FlatList
-          data={openRequests.data ?? []}
-          keyExtractor={(i) => String(i.id)}
-          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}
-          refreshControl={<RefreshControl refreshing={openRequests.isRefetching} onRefresh={() => openRequests.refetch()} />}
-          ListEmptyComponent={<EmptyState title="暂无待报价询价" hint="有用户发布回收询价时会显示在这里。" />}
-          renderItem={({ item }) => {
-            const st = RECYCLING_STATUS[item.status] ?? { label: item.status, tone: "gray" as const };
-            return (
-              <Pressable onPress={() => router.push(`/recycling/${item.id}` as any)} style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
-                <View className="bg-surface rounded-2xl p-4 mb-3 border border-border">
-                  <View className="flex-row items-center justify-between mb-1.5">
-                    <StatusBadge label={st.label} tone={st.tone} small />
-                    <Text className="text-xs text-muted">{formatTime(item.createdAt)}</Text>
-                  </View>
-                  <Text className="text-base font-semibold text-foreground" numberOfLines={1}>{item.title}</Text>
-                  <View className="flex-row items-center gap-2 mt-1">
-                    <Text className="text-xs text-muted">{item.category}</Text>
-                    <Text className="text-xs text-muted">{item.cityName}</Text>
-                    {item.expectedPrice ? <Text className="text-xs text-action">期望 ¥{item.expectedPrice}</Text> : null}
-                  </View>
-                </View>
-              </Pressable>
-            );
-          }}
-        />
-      )}
-    </View>
-  );
-}
+type Channel = (typeof DISCOVER_CHANNELS)[number]["id"];
 
 export default function DiscoverScreen() {
-  const { role, isAuthenticated } = useRole();
+  const router = useRouter();
+  const params = useLocalSearchParams<{ tab?: string }>();
+  const initial = DISCOVER_CHANNELS.some((item) => item.id === params.tab) ? params.tab as Channel : "recommended";
+  const [channel, setChannel] = useState<Channel>(initial);
+  const { isAuthenticated } = useRole();
+  const location = useGlobalLocation();
+
+  useEffect(() => {
+    if (params.tab && DISCOVER_CHANNELS.some((item) => item.id === params.tab)) setChannel(params.tab as Channel);
+  }, [params.tab]);
+
+  const content = trpc.content.discover.useQuery({
+    channel,
+    limit: 30,
+    locationLabel: channel === "nearby" ? location.region ?? undefined : undefined,
+  });
+
+  const label = DISCOVER_CHANNELS.find((item) => item.id === channel)?.title ?? "发现";
+
   return (
     <ScreenContainer>
-      {role === "engineer" && isAuthenticated ? (
-        <EngineerHall />
-      ) : role === "merchant" && isAuthenticated ? (
-        <AuthGate>
-          <MerchantInquiries />
-        </AuthGate>
-      ) : (
-        <UserDiscover />
-      )}
+      <View className="flex-1">
+        <View className="px-4 pb-3 pt-3">
+          <Text className="text-2xl font-bold text-foreground">发现</Text>
+          <Text className="mt-1 text-sm text-muted">八个频道共用同一可信内容流，来源、作者认证和业务关联分别展示。</Text>
+          {channel === "nearby" ? <Text className="mt-2 text-xs text-primary">当前城市：{location.region ?? "未选择"} · 附近内容使用全局位置状态</Text> : null}
+        </View>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: 10 }}>
+          {DISCOVER_CHANNELS.map((item) => (
+            <Pressable key={item.id} onPress={() => setChannel(item.id)} className={`mx-1 rounded-full px-4 py-2 ${channel === item.id ? "bg-primary" : "border border-border bg-surface"}`}>
+              <Text className={channel === item.id ? "font-medium text-white" : "text-foreground"}>{item.title}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+
+        {channel === "following" && !isAuthenticated ? (
+          <EmptyState title="登录后查看关注内容" hint="关注频道只展示你已关注作者发布的公开内容。" actionTitle="登录" onAction={startLogin} />
+        ) : content.isLoading ? <LoadingView text={`正在加载${label}频道…`} />
+          : content.isError ? <ErrorState title={`${label}频道加载失败`} hint={content.error.message} onRetry={() => content.refetch()} />
+            : (
+              <FlatList
+                data={(content.data ?? []) as ContentCardData[]}
+                keyExtractor={(item) => String(item.post.id)}
+                renderItem={({ item }) => <ContentCard item={item} />}
+                contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 36 }}
+                refreshControl={<RefreshControl refreshing={content.isRefetching} onRefresh={() => content.refetch()} />}
+                ListEmptyComponent={
+                  <EmptyState
+                    title={`${label}频道暂无内容`}
+                    hint={channel === "nearby" ? "可到首页切换城市，或发布带模糊位置的内容。" : "发布第一篇真实、有来源声明的内容。"}
+                    actionTitle={channel === "nearby" ? "切换城市" : "去创作"}
+                    onAction={() => router.push((channel === "nearby" ? "/location" : "/(tabs)/publish") as never)}
+                  />
+                }
+              />
+            )}
+      </View>
     </ScreenContainer>
   );
 }

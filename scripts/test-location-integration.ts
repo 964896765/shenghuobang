@@ -2,6 +2,12 @@ import "dotenv/config";
 import { spawn } from "node:child_process";
 import mysql, { type ResultSetHeader, type RowDataPacket } from "mysql2/promise";
 
+import {
+  assertSafeLocalTestDatabaseServer,
+  createMysqlConnectionOptions,
+  replaceMysqlDatabaseName,
+  resolveMysqlAdminUrlFromEnv,
+} from "./lib/mysql-test-config.mjs";
 import type { TrpcContext } from "../server/_core/context";
 
 const DATABASE_NAME = "shenghuobang_location_integration";
@@ -25,23 +31,19 @@ async function scalar<T>(connection: mysql.Connection, query: string, params: un
 }
 
 async function main() {
-  const source = new URL(process.env.MYSQL_INTEGRATION_URL ?? process.env.DATABASE_URL ?? "mysql://root:password@127.0.0.1:3306/mysql");
-  const admin = await mysql.createConnection({
-    host: source.hostname,
-    port: Number(source.port || 3306),
-    user: decodeURIComponent(source.username),
-    password: decodeURIComponent(source.password),
-    multipleStatements: true,
-  });
-  const target = new URL(source.toString());
-  target.pathname = `/${DATABASE_NAME}`;
+  const { rawUrl: adminRawUrl } = resolveMysqlAdminUrlFromEnv({ consumerName: "location integration test" });
+  assertSafeLocalTestDatabaseServer(adminRawUrl, { consumerName: "location integration test" });
+  const admin = await mysql.createConnection(
+    createMysqlConnectionOptions(adminRawUrl, { multipleStatements: true }),
+  );
+  const target = replaceMysqlDatabaseName(adminRawUrl, DATABASE_NAME);
   const results: string[] = [];
   try {
     await admin.query(`DROP DATABASE IF EXISTS \`${DATABASE_NAME}\`; CREATE DATABASE \`${DATABASE_NAME}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`);
     const command = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
-    await run(command, ["db:migrate"], { ...process.env, DATABASE_URL: target.toString() });
+    await run(command, ["db:migrate"], { ...process.env, DATABASE_URL: target });
     await admin.query(`USE \`${DATABASE_NAME}\``);
-    process.env.DATABASE_URL = target.toString();
+    process.env.DATABASE_URL = target;
 
     const [first] = await admin.execute<ResultSetHeader>(
       "INSERT INTO users (openId,phone,passwordHash,name) VALUES ('location:first','18800000401','integration','位置用户A')",

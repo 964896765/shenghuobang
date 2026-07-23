@@ -211,8 +211,9 @@ export type Quote = typeof quotes.$inferSelect;
 /** 工程项目 */
 export const projects = mysqlTable("projects", {
   id: int("id").autoincrement().primaryKey(),
-  needId: int("needId").notNull(),
-  quoteId: int("quoteId").notNull(),
+  // Legacy quote-created projects keep both references. Idea-created projects leave them NULL.
+  needId: int("needId"),
+  quoteId: int("quoteId"),
   ownerId: int("ownerId").notNull(),
   engineerId: int("engineerId").notNull(),
   title: varchar("title", { length: 255 }).notNull(),
@@ -254,12 +255,16 @@ export const milestones = mysqlTable("milestones", {
   description: text("description"),
   amount: int("amount").default(0),
   sortOrder: int("sortOrder").default(0).notNull(),
+  milestoneType: mysqlEnum("milestoneType", ["general", "prototype"]).default("general").notNull(),
+  prototypeTaskType: mysqlEnum("prototypeTaskType", ["designer", "engineer"]),
   status: mysqlEnum("status", ["pending", "in_progress", "submitted", "waiting_acceptance", "revision_required", "accepted", "overdue", "disputed", "cancelled"]).default("pending").notNull(),
   deliveryNote: text("deliveryNote"),
   revisionReason: text("revisionReason"),
+  startedAt: timestamp("startedAt"),
   submittedAt: timestamp("submittedAt"),
   acceptedAt: timestamp("acceptedAt"),
   assigneeProjectMembershipId: int("assigneeProjectMembershipId"),
+  startedByProjectMembershipId: int("startedByProjectMembershipId"),
   lastSubmittedByProjectMembershipId: int("lastSubmittedByProjectMembershipId"),
   authorizationVersion: int("authorizationVersion").default(1).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -274,6 +279,11 @@ export const milestones = mysqlTable("milestones", {
     columns: [table.projectId, table.lastSubmittedByProjectMembershipId],
     foreignColumns: [projectMemberships.projectId, projectMemberships.id],
     name: "milestones_submitter_project_membership_fk",
+  }),
+  starterProjectForeignKey: foreignKey({
+    columns: [table.projectId, table.startedByProjectMembershipId],
+    foreignColumns: [projectMemberships.projectId, projectMemberships.id],
+    name: "milestones_starter_project_membership_fk",
   }),
 }));
 export type Milestone = typeof milestones.$inferSelect;
@@ -357,6 +367,173 @@ export const projectFiles = mysqlTable("project_files",
   }),
 );
 export type ProjectFile = typeof projectFiles.$inferSelect;
+
+export const designVersions = mysqlTable("design_versions", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull().references(() => projects.id),
+  versionNo: int("versionNo").notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  summary: varchar("summary", { length: 500 }).notNull(),
+  changeNotes: text("changeNotes"),
+  status: mysqlEnum("status", ["draft", "submitted", "superseded", "withdrawn"]).default("draft").notNull(),
+  createdByProjectMembershipId: int("createdByProjectMembershipId").notNull(),
+  submittedByProjectMembershipId: int("submittedByProjectMembershipId"),
+  submittedAt: timestamp("submittedAt"),
+  authorizationVersion: int("authorizationVersion").default(1).notNull(),
+  requestId: varchar("requestId", { length: 64 }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  projectVersionUnique: uniqueIndex("design_versions_project_version_uq").on(table.projectId, table.versionNo),
+  requestUnique: uniqueIndex("design_versions_request_uq").on(table.requestId),
+  projectStatusIndex: index("design_versions_project_status_idx").on(table.projectId, table.status, table.submittedAt),
+  creatorProjectForeignKey: foreignKey({
+    columns: [table.projectId, table.createdByProjectMembershipId],
+    foreignColumns: [projectMemberships.projectId, projectMemberships.id],
+    name: "design_versions_creator_project_membership_fk",
+  }),
+  submitterProjectForeignKey: foreignKey({
+    columns: [table.projectId, table.submittedByProjectMembershipId],
+    foreignColumns: [projectMemberships.projectId, projectMemberships.id],
+    name: "design_versions_submitter_project_membership_fk",
+  }),
+}));
+export type DesignVersion = typeof designVersions.$inferSelect;
+
+export const designVersionFiles = mysqlTable("design_version_files", {
+  id: int("id").autoincrement().primaryKey(),
+  designVersionId: int("designVersionId").notNull().references(() => designVersions.id),
+  projectFileId: int("projectFileId").notNull().references(() => projectFiles.id),
+  fileRole: mysqlEnum("fileRole", ["source", "preview", "reference", "specification", "other"]).default("other").notNull(),
+  sortOrder: int("sortOrder").default(0).notNull(),
+  uploadedByProjectMembershipId: int("uploadedByProjectMembershipId").notNull().references(() => projectMemberships.id),
+  disabledAt: timestamp("disabledAt"),
+  accessPolicyVersion: int("accessPolicyVersion").default(1).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  designVersionFileUnique: uniqueIndex("design_version_files_version_file_uq").on(table.designVersionId, table.projectFileId),
+  versionStateIndex: index("design_version_files_version_state_idx").on(table.designVersionId, table.disabledAt, table.sortOrder),
+}));
+export type DesignVersionFile = typeof designVersionFiles.$inferSelect;
+
+export const milestoneDeliverableSubmissions = mysqlTable("milestone_deliverable_submissions", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull().references(() => projects.id),
+  milestoneId: int("milestoneId").notNull().references(() => milestones.id),
+  submissionVersion: int("submissionVersion").notNull(),
+  note: text("note").notNull(),
+  submittedByProjectMembershipId: int("submittedByProjectMembershipId").notNull(),
+  submittedAt: timestamp("submittedAt").defaultNow().notNull(),
+  requestId: varchar("requestId", { length: 64 }).notNull(),
+  status: mysqlEnum("status", ["submitted", "superseded"]).default("submitted").notNull(),
+  authorizationVersion: int("authorizationVersion").default(1).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  milestoneSubmissionVersionUnique: uniqueIndex("milestone_deliverable_submissions_milestone_version_uq").on(table.milestoneId, table.submissionVersion),
+  requestUnique: uniqueIndex("milestone_deliverable_submissions_request_uq").on(table.requestId),
+  projectMilestoneStatusIndex: index("milestone_deliverable_submissions_project_milestone_status_idx").on(table.projectId, table.milestoneId, table.status, table.submittedAt),
+  submitterProjectForeignKey: foreignKey({
+    columns: [table.projectId, table.submittedByProjectMembershipId],
+    foreignColumns: [projectMemberships.projectId, projectMemberships.id],
+    name: "milestone_deliverable_submissions_submitter_project_membership_fk",
+  }),
+}));
+export type MilestoneDeliverableSubmission = typeof milestoneDeliverableSubmissions.$inferSelect;
+
+export const milestoneDeliverableSubmissionFiles = mysqlTable("milestone_deliverable_submission_files", {
+  id: int("id").autoincrement().primaryKey(),
+  submissionId: int("submissionId").notNull().references(() => milestoneDeliverableSubmissions.id),
+  projectFileId: int("projectFileId").notNull().references(() => projectFiles.id),
+  sortOrder: int("sortOrder").default(0).notNull(),
+  disabledAt: timestamp("disabledAt"),
+  accessPolicyVersion: int("accessPolicyVersion").default(1).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  submissionFileUnique: uniqueIndex("milestone_deliverable_submission_files_submission_file_uq").on(table.submissionId, table.projectFileId),
+  submissionStateIndex: index("milestone_deliverable_submission_files_submission_state_idx").on(table.submissionId, table.disabledAt, table.sortOrder),
+}));
+export type MilestoneDeliverableSubmissionFile = typeof milestoneDeliverableSubmissionFiles.$inferSelect;
+
+export const milestoneAcceptanceRounds = mysqlTable("milestone_acceptance_rounds", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull().references(() => projects.id),
+  milestoneId: int("milestoneId").notNull().references(() => milestones.id),
+  submissionId: int("submissionId").notNull().references(() => milestoneDeliverableSubmissions.id),
+  roundNo: int("roundNo").notNull(),
+  status: mysqlEnum("status", ["pending_review", "accepted", "revision_requested", "superseded"]).default("pending_review").notNull(),
+  reviewerProjectMembershipId: int("reviewerProjectMembershipId"),
+  decisionNote: text("decisionNote"),
+  requestId: varchar("requestId", { length: 64 }).notNull(),
+  decidedAt: timestamp("decidedAt"),
+  authorizationVersion: int("authorizationVersion").default(1).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  submissionUnique: uniqueIndex("milestone_acceptance_rounds_submission_uq").on(table.submissionId),
+  roundUnique: uniqueIndex("milestone_acceptance_rounds_milestone_round_uq").on(table.milestoneId, table.roundNo),
+  requestUnique: uniqueIndex("milestone_acceptance_rounds_request_uq").on(table.requestId),
+  milestoneStatusIndex: index("milestone_acceptance_rounds_milestone_status_idx").on(table.milestoneId, table.status, table.createdAt),
+  reviewerProjectForeignKey: foreignKey({
+    columns: [table.projectId, table.reviewerProjectMembershipId],
+    foreignColumns: [projectMemberships.projectId, projectMemberships.id],
+    name: "milestone_acceptance_rounds_reviewer_project_membership_fk",
+  }),
+}));
+export type MilestoneAcceptanceRound = typeof milestoneAcceptanceRounds.$inferSelect;
+
+export const milestoneRevisionRequests = mysqlTable("milestone_revision_requests", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull().references(() => projects.id),
+  milestoneId: int("milestoneId").notNull().references(() => milestones.id),
+  acceptanceRoundId: int("acceptanceRoundId").notNull().references(() => milestoneAcceptanceRounds.id),
+  reason: text("reason").notNull(),
+  requirementsJson: json("requirementsJson").$type<string[] | null>(),
+  assignedProjectMembershipId: int("assignedProjectMembershipId"),
+  dueAt: timestamp("dueAt"),
+  status: mysqlEnum("status", ["open", "resubmitted", "closed"]).default("open").notNull(),
+  createdByProjectMembershipId: int("createdByProjectMembershipId").notNull(),
+  resolvedBySubmissionId: int("resolvedBySubmissionId").references(() => milestoneDeliverableSubmissions.id),
+  requestId: varchar("requestId", { length: 64 }).notNull(),
+  authorizationVersion: int("authorizationVersion").default(1).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  acceptanceRoundUnique: uniqueIndex("milestone_revision_requests_round_uq").on(table.acceptanceRoundId),
+  requestUnique: uniqueIndex("milestone_revision_requests_request_uq").on(table.requestId),
+  milestoneStatusIndex: index("milestone_revision_requests_milestone_status_idx").on(table.milestoneId, table.status, table.createdAt),
+  assignedProjectForeignKey: foreignKey({
+    columns: [table.projectId, table.assignedProjectMembershipId],
+    foreignColumns: [projectMemberships.projectId, projectMemberships.id],
+    name: "milestone_revision_requests_assignee_project_membership_fk",
+  }),
+  creatorProjectForeignKey: foreignKey({
+    columns: [table.projectId, table.createdByProjectMembershipId],
+    foreignColumns: [projectMemberships.projectId, projectMemberships.id],
+    name: "milestone_revision_requests_creator_project_membership_fk",
+  }),
+}));
+export type MilestoneRevisionRequest = typeof milestoneRevisionRequests.$inferSelect;
+
+export const projectIntentions = mysqlTable("project_intentions", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull().references(() => projects.id),
+  accountId: int("accountId").notNull().references(() => users.id),
+  intentionType: mysqlEnum("intentionType", ["follow", "trial", "purchase_interest", "collaboration_interest"]).notNull(),
+  note: text("note"),
+  status: mysqlEnum("status", ["active", "withdrawn"]).default("active").notNull(),
+  activeDedupeKey: varchar("activeDedupeKey", { length: 191 }),
+  requestId: varchar("requestId", { length: 64 }).notNull(),
+  lastRequestId: varchar("lastRequestId", { length: 64 }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  requestUnique: uniqueIndex("project_intentions_request_uq").on(table.requestId),
+  activeDedupeUnique: uniqueIndex("project_intentions_active_dedupe_uq").on(table.activeDedupeKey),
+  accountProjectStatusIndex: index("project_intentions_account_project_status_idx").on(table.accountId, table.projectId, table.status),
+  projectTypeStatusIndex: index("project_intentions_project_type_status_idx").on(table.projectId, table.intentionType, table.status),
+}));
+export type ProjectIntention = typeof projectIntentions.$inferSelect;
 
 /** 项目变更单 */
 export const projectChanges = mysqlTable("project_changes", {
@@ -655,29 +832,56 @@ export const notifications = mysqlTable("notifications",
 export type Notification = typeof notifications.$inferSelect;
 
 /** 评价 */
-export const reviews = mysqlTable("reviews", {
-  id: int("id").autoincrement().primaryKey(),
-  orderId: int("orderId").notNull(),
-  reviewerId: int("reviewerId").notNull(),
-  revieweeId: int("revieweeId").notNull(),
-  overallRating: int("overallRating").notNull(), // 1-5
-  dimensions: json("dimensions").$type<Record<string, number>>(),
-  content: text("content"),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+export const reviews = mysqlTable(
+  "reviews",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    orderId: int("orderId").notNull(),
+    reviewerId: int("reviewerId").notNull(),
+    revieweeId: int("revieweeId").notNull(),
+    overallRating: int("overallRating").notNull(), // 1-5
+    dimensions: json("dimensions").$type<Record<string, number>>(),
+    tags: json("tags").$type<string[]>(),
+    imageFileIds: json("imageFileIds").$type<number[]>(),
+    content: text("content"),
+    businessSource: varchar("businessSource", { length: 64 }).default("order").notNull(),
+    impactDimension: varchar("impactDimension", { length: 64 }).default("trade_reliability").notNull(),
+    requestId: varchar("requestId", { length: 64 }),
+    reply: text("reply"),
+    repliedBy: int("repliedBy"),
+    repliedAt: timestamp("repliedAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    orderReviewerUnique: uniqueIndex("reviews_order_reviewer_uq").on(table.orderId, table.reviewerId),
+    reviewerRequestUnique: uniqueIndex("reviews_reviewer_request_uq").on(table.reviewerId, table.requestId),
+    revieweeCreatedIndex: index("reviews_reviewee_created_idx").on(table.revieweeId, table.createdAt),
+  }),
+);
 export type Review = typeof reviews.$inferSelect;
 
 /** 信用事件 */
-export const creditEvents = mysqlTable("credit_events", {
-  id: int("id").autoincrement().primaryKey(),
-  userId: int("userId").notNull(),
-  eventType: varchar("eventType", { length: 64 }).notNull(),
-  scoreChange: int("scoreChange").default(0).notNull(),
-  reason: varchar("reason", { length: 255 }),
-  refType: varchar("refType", { length: 32 }),
-  refId: int("refId"),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+export const creditEvents = mysqlTable(
+  "credit_events",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    userId: int("userId").notNull(),
+    actorAccountId: int("actorAccountId"),
+    eventType: varchar("eventType", { length: 64 }).notNull(),
+    scoreChange: int("scoreChange").default(0).notNull(),
+    reason: varchar("reason", { length: 255 }),
+    businessSource: varchar("businessSource", { length: 64 }).default("system").notNull(),
+    impactDimension: varchar("impactDimension", { length: 64 }).default("general").notNull(),
+    refType: varchar("refType", { length: 32 }),
+    refId: int("refId"),
+    requestId: varchar("requestId", { length: 64 }),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    userRequestUnique: uniqueIndex("credit_events_user_request_uq").on(table.userId, table.requestId),
+    userCreatedIndex: index("credit_events_user_created_idx").on(table.userId, table.createdAt),
+  }),
+);
 export type CreditEvent = typeof creditEvents.$inferSelect;
 
 // ============ V3.2 物品生命周期 ============
@@ -2261,3 +2465,724 @@ export const auditLogs = mysqlTable("audit_logs",
   }),
 );
 export type AuditLog = typeof auditLogs.$inferSelect;
+
+// ============ V3.3-B1 idea collaboration ============
+
+export const ideas = mysqlTable("ideas",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    creatorAccountId: int("creatorAccountId").notNull().references(() => users.id),
+    creatorIdentityId: int("creatorIdentityId").notNull().references(() => businessIdentities.id),
+    title: varchar("title", { length: 160 }).notNull(),
+    summary: varchar("summary", { length: 500 }).notNull(),
+    description: text("description").notNull(),
+    categoryCode: varchar("categoryCode", { length: 64 }).notNull(),
+    tags: json("tags").$type<string[]>().notNull(),
+    visibility: mysqlEnum("visibility", ["public", "private", "nda"]).default("public").notNull(),
+    status: mysqlEnum("status", ["draft", "published", "collaborating", "converted", "archived"]).default("draft").notNull(),
+    coverFileId: int("coverFileId").references(() => storedFiles.id),
+    authorizationVersion: int("authorizationVersion").default(1).notNull(),
+    publishedAt: timestamp("publishedAt"),
+    convertedProjectId: int("convertedProjectId").references(() => projects.id),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+    deletedAt: timestamp("deletedAt"),
+  },
+  (table) => ({
+    convertedProjectUnique: uniqueIndex("ideas_converted_project_uq").on(table.convertedProjectId),
+    creatorStatusIndex: index("ideas_creator_status_idx").on(table.creatorAccountId, table.status, table.deletedAt),
+    publicFeedIndex: index("ideas_public_feed_idx").on(table.visibility, table.status, table.publishedAt),
+  }),
+);
+export type Idea = typeof ideas.$inferSelect;
+
+export const ideaAttachments = mysqlTable("idea_attachments",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    ideaId: int("ideaId").notNull().references(() => ideas.id),
+    fileId: int("fileId").notNull().references(() => storedFiles.id),
+    attachmentType: mysqlEnum("attachmentType", ["cover", "reference", "design", "other"]).default("other").notNull(),
+    confidentialityLevel: mysqlEnum("confidentialityLevel", ["PUBLIC", "INTERNAL", "CONFIDENTIAL", "NDA", "RESTRICTED"]).default("INTERNAL").notNull(),
+    sortOrder: int("sortOrder").default(0).notNull(),
+    uploadedBy: int("uploadedBy").notNull().references(() => users.id),
+    accessPolicyVersion: int("accessPolicyVersion").default(1).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    disabledAt: timestamp("disabledAt"),
+  },
+  (table) => ({
+    ideaFileUnique: uniqueIndex("idea_attachments_idea_file_uq").on(table.ideaId, table.fileId),
+    ideaStateIndex: index("idea_attachments_idea_state_idx").on(table.ideaId, table.disabledAt, table.sortOrder),
+  }),
+);
+export type IdeaAttachment = typeof ideaAttachments.$inferSelect;
+
+export const ideaCollaborationInvitations = mysqlTable("idea_collaboration_invitations",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    ideaId: int("ideaId").notNull().references(() => ideas.id),
+    inviterAccountId: int("inviterAccountId").notNull().references(() => users.id),
+    invitedAccountId: int("invitedAccountId").notNull().references(() => users.id),
+    invitedIdentityId: int("invitedIdentityId").notNull().references(() => businessIdentities.id),
+    requestedRole: mysqlEnum("requestedRole", ["designer", "engineer", "viewer"]).notNull(),
+    status: mysqlEnum("status", ["pending", "accepted", "declined", "revoked", "expired"]).default("pending").notNull(),
+    activeDedupeKey: varchar("activeDedupeKey", { length: 191 }),
+    message: varchar("message", { length: 1000 }),
+    ndaRequired: boolean("ndaRequired").default(false).notNull(),
+    expiresAt: timestamp("expiresAt").notNull(),
+    acceptedAt: timestamp("acceptedAt"),
+    requestId: varchar("requestId", { length: 64 }).notNull(),
+    version: int("version").default(1).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({
+    requestUnique: uniqueIndex("idea_invitations_request_uq").on(table.requestId),
+    activeDedupeUnique: uniqueIndex("idea_invitations_active_dedupe_uq").on(table.activeDedupeKey),
+    recipientStatusIndex: index("idea_invitations_recipient_status_idx").on(table.invitedAccountId, table.status, table.expiresAt),
+    ideaStatusIndex: index("idea_invitations_idea_status_idx").on(table.ideaId, table.status),
+  }),
+);
+export type IdeaCollaborationInvitation = typeof ideaCollaborationInvitations.$inferSelect;
+
+export const ideaNdaAcceptances = mysqlTable("idea_nda_acceptances",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    ideaId: int("ideaId").notNull().references(() => ideas.id),
+    accountId: int("accountId").notNull().references(() => users.id),
+    identityId: int("identityId").notNull().references(() => businessIdentities.id),
+    ndaVersion: varchar("ndaVersion", { length: 64 }).notNull(),
+    acceptedAt: timestamp("acceptedAt").defaultNow().notNull(),
+    revokedAt: timestamp("revokedAt"),
+    requestId: varchar("requestId", { length: 64 }).notNull(),
+  },
+  (table) => ({
+    ideaAccountIdentityUnique: uniqueIndex("idea_nda_idea_account_identity_uq").on(table.ideaId, table.accountId, table.identityId),
+    requestUnique: uniqueIndex("idea_nda_request_uq").on(table.requestId),
+    accountStateIndex: index("idea_nda_account_state_idx").on(table.accountId, table.revokedAt),
+  }),
+);
+export type IdeaNdaAcceptance = typeof ideaNdaAcceptances.$inferSelect;
+
+
+// ============ V4 高可信产品全生命周期核心 ============
+
+/** 产品型号：承载可复用的产品定义，不替代既有物品实例。 */
+export const productModels = mysqlTable("product_models",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    publicCode: varchar("publicCode", { length: 32 }).notNull(),
+    ownerAccountId: int("ownerAccountId").notNull().references(() => users.id),
+    ownerOrganizationId: int("ownerOrganizationId").references(() => organizations.id),
+    name: varchar("name", { length: 160 }).notNull(),
+    summary: varchar("summary", { length: 500 }).notNull(),
+    description: text("description"),
+    categoryCode: varchar("categoryCode", { length: 64 }).notNull(),
+    brandName: varchar("brandName", { length: 128 }),
+    modelCode: varchar("modelCode", { length: 128 }),
+    versionLabel: varchar("versionLabel", { length: 64 }).default("v1").notNull(),
+    specifications: json("specifications").$type<Record<string, unknown>>().notNull(),
+    visibility: mysqlEnum("visibility", ["public", "owner_only", "restricted"]).default("owner_only").notNull(),
+    status: mysqlEnum("status", ["draft", "active", "retired", "archived"]).default("draft").notNull(),
+    authorizationVersion: int("authorizationVersion").default(1).notNull(),
+    createdRequestId: varchar("createdRequestId", { length: 64 }).notNull(),
+    lastRequestId: varchar("lastRequestId", { length: 64 }).notNull(),
+    publishedAt: timestamp("publishedAt"),
+    retiredAt: timestamp("retiredAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+    deletedAt: timestamp("deletedAt"),
+  },
+  (table) => ({
+    publicCodeUnique: uniqueIndex("product_models_public_code_uq").on(table.publicCode),
+    createdRequestUnique: uniqueIndex("product_models_created_request_uq").on(table.createdRequestId),
+    lastRequestUnique: uniqueIndex("product_models_last_request_uq").on(table.lastRequestId),
+    ownerStatusIndex: index("product_models_owner_status_idx").on(table.ownerAccountId, table.status, table.deletedAt),
+    organizationStatusIndex: index("product_models_organization_status_idx").on(table.ownerOrganizationId, table.status, table.deletedAt),
+    publicFeedIndex: index("product_models_public_feed_idx").on(table.visibility, table.status, table.publishedAt),
+  }),
+);
+export type ProductModel = typeof productModels.$inferSelect;
+export type InsertProductModel = typeof productModels.$inferInsert;
+
+/** 产品来源关系：以多态来源连接需求、创意、项目或历史物品，避免向上游表重复加字段。 */
+export const productSourceLinks = mysqlTable("product_source_links",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    productModelId: int("productModelId").notNull().references(() => productModels.id),
+    sourceType: mysqlEnum("sourceType", ["need", "idea", "project", "legacy_item", "funding_campaign"]).notNull(),
+    sourceId: int("sourceId").notNull(),
+    relationType: mysqlEnum("relationType", ["derived_from", "validated_by", "produced_by", "migrated_from"]).default("derived_from").notNull(),
+    createdByAccountId: int("createdByAccountId").notNull().references(() => users.id),
+    requestId: varchar("requestId", { length: 64 }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    requestUnique: uniqueIndex("product_source_links_request_uq").on(table.requestId),
+    relationUnique: uniqueIndex("product_source_links_relation_uq").on(table.productModelId, table.sourceType, table.sourceId, table.relationType),
+    sourceIndex: index("product_source_links_source_idx").on(table.sourceType, table.sourceId),
+  }),
+);
+export type ProductSourceLink = typeof productSourceLinks.$inferSelect;
+
+/** 产品单元：为具体实物建立稳定身份，并可选关联既有 items 资产档案。 */
+export const productUnits = mysqlTable("product_units",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    productModelId: int("productModelId").notNull().references(() => productModels.id),
+    linkedItemId: int("linkedItemId").references(() => items.id),
+    currentOwnerAccountId: int("currentOwnerAccountId").references(() => users.id),
+    publicCode: varchar("publicCode", { length: 40 }).notNull(),
+    serialNumber: varchar("serialNumber", { length: 128 }),
+    batchCode: varchar("batchCode", { length: 96 }),
+    status: mysqlEnum("status", ["registered", "manufactured", "in_use", "idle", "listed", "under_service", "transferred", "recycling", "recycled", "retired"]).default("registered").notNull(),
+    trustLevel: mysqlEnum("trustLevel", ["self_declared", "verified", "certified"]).default("self_declared").notNull(),
+    passportVisibility: mysqlEnum("passportVisibility", ["public", "owner_only", "restricted"]).default("owner_only").notNull(),
+    authorizationVersion: int("authorizationVersion").default(1).notNull(),
+    createdRequestId: varchar("createdRequestId", { length: 64 }).notNull(),
+    lastRequestId: varchar("lastRequestId", { length: 64 }).notNull(),
+    manufacturedAt: timestamp("manufacturedAt"),
+    activatedAt: timestamp("activatedAt"),
+    retiredAt: timestamp("retiredAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({
+    publicCodeUnique: uniqueIndex("product_units_public_code_uq").on(table.publicCode),
+    createdRequestUnique: uniqueIndex("product_units_created_request_uq").on(table.createdRequestId),
+    lastRequestUnique: uniqueIndex("product_units_last_request_uq").on(table.lastRequestId),
+    linkedItemUnique: uniqueIndex("product_units_linked_item_uq").on(table.linkedItemId),
+    modelSerialUnique: uniqueIndex("product_units_model_serial_uq").on(table.productModelId, table.serialNumber),
+    modelStatusIndex: index("product_units_model_status_idx").on(table.productModelId, table.status),
+    ownerStatusIndex: index("product_units_owner_status_idx").on(table.currentOwnerAccountId, table.status),
+  }),
+);
+export type ProductUnit = typeof productUnits.$inferSelect;
+export type InsertProductUnit = typeof productUnits.$inferInsert;
+
+/** 产品护照事件：仅追加写入，以序号、请求幂等键和哈希链保留可验证历史。 */
+export const productPassportEvents = mysqlTable("product_passport_events",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    productUnitId: int("productUnitId").notNull().references(() => productUnits.id),
+    sequenceNumber: int("sequenceNumber").notNull(),
+    eventType: varchar("eventType", { length: 64 }).notNull(),
+    actorAccountId: int("actorAccountId").references(() => users.id),
+    actorOrganizationId: int("actorOrganizationId").references(() => organizations.id),
+    fromStatus: varchar("fromStatus", { length: 32 }),
+    toStatus: varchar("toStatus", { length: 32 }),
+    visibility: mysqlEnum("visibility", ["public", "owner", "internal"]).default("owner").notNull(),
+    sourceType: varchar("sourceType", { length: 64 }),
+    sourceId: varchar("sourceId", { length: 64 }),
+    requestId: varchar("requestId", { length: 64 }).notNull(),
+    detail: json("detail").$type<Record<string, unknown>>().notNull(),
+    previousEventHash: char("previousEventHash", { length: 64 }),
+    eventHash: char("eventHash", { length: 64 }).notNull(),
+    occurredAt: timestamp("occurredAt").notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    requestUnique: uniqueIndex("product_passport_events_request_uq").on(table.requestId),
+    unitSequenceUnique: uniqueIndex("product_passport_events_unit_sequence_uq").on(table.productUnitId, table.sequenceNumber),
+    unitTimelineIndex: index("product_passport_events_unit_timeline_idx").on(table.productUnitId, table.occurredAt),
+    sourceIndex: index("product_passport_events_source_idx").on(table.sourceType, table.sourceId),
+  }),
+);
+export type ProductPassportEvent = typeof productPassportEvents.$inferSelect;
+
+// ============ V4 新品筹措与意向验证 ============
+
+/** 新品筹措活动：验证真实需求与首批支持意向，不代表订单、支付、股权或收益承诺。 */
+export const fundingCampaigns = mysqlTable("funding_campaigns",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    publicCode: varchar("publicCode", { length: 32 }).notNull(),
+    ownerAccountId: int("ownerAccountId").notNull().references(() => users.id),
+    sourceType: mysqlEnum("sourceType", ["need", "idea", "project", "product_model"]).notNull(),
+    sourceId: int("sourceId").notNull(),
+    title: varchar("title", { length: 160 }).notNull(),
+    summary: varchar("summary", { length: 500 }).notNull(),
+    description: text("description").notNull(),
+    categoryCode: varchar("categoryCode", { length: 64 }).notNull(),
+    coverUrl: varchar("coverUrl", { length: 1000 }),
+    goalQuantity: int("goalQuantity").notNull(),
+    pledgedQuantity: int("pledgedQuantity").default(0).notNull(),
+    activePledgeCount: int("activePledgeCount").default(0).notNull(),
+    evidence: json("evidence").$type<Array<Record<string, unknown>>>().notNull(),
+    verificationSummary: text("verificationSummary"),
+    riskSummary: text("riskSummary").notNull(),
+    visibility: mysqlEnum("visibility", ["public", "owner_only"]).default("owner_only").notNull(),
+    status: mysqlEnum("status", ["draft", "reviewing", "active", "succeeded", "failed", "cancelled", "closed"]).default("draft").notNull(),
+    authorizationVersion: int("authorizationVersion").default(1).notNull(),
+    activeSourceDedupeKey: varchar("activeSourceDedupeKey", { length: 191 }),
+    createdRequestId: varchar("createdRequestId", { length: 64 }).notNull(),
+    lastRequestId: varchar("lastRequestId", { length: 64 }).notNull(),
+    startsAt: timestamp("startsAt"),
+    endsAt: timestamp("endsAt"),
+    publishedAt: timestamp("publishedAt"),
+    closedAt: timestamp("closedAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+    deletedAt: timestamp("deletedAt"),
+  },
+  (table) => ({
+    publicCodeUnique: uniqueIndex("funding_campaigns_public_code_uq").on(table.publicCode),
+    activeSourceUnique: uniqueIndex("funding_campaigns_active_source_uq").on(table.activeSourceDedupeKey),
+    createdRequestUnique: uniqueIndex("funding_campaigns_created_request_uq").on(table.createdRequestId),
+    lastRequestUnique: uniqueIndex("funding_campaigns_last_request_uq").on(table.lastRequestId),
+    ownerStatusIndex: index("funding_campaigns_owner_status_idx").on(table.ownerAccountId, table.status, table.deletedAt),
+    publicFeedIndex: index("funding_campaigns_public_feed_idx").on(table.visibility, table.status, table.publishedAt),
+    sourceIndex: index("funding_campaigns_source_idx").on(table.sourceType, table.sourceId),
+    deadlineIndex: index("funding_campaigns_deadline_idx").on(table.status, table.endsAt),
+  }),
+);
+export type FundingCampaign = typeof fundingCampaigns.$inferSelect;
+export type InsertFundingCampaign = typeof fundingCampaigns.$inferInsert;
+
+/** 新品支持意向：只记录数量意向，不创建订单、支付、库存锁定或投资关系。 */
+export const fundingPledges = mysqlTable("funding_pledges",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    campaignId: int("campaignId").notNull().references(() => fundingCampaigns.id),
+    supporterAccountId: int("supporterAccountId").notNull().references(() => users.id),
+    quantity: int("quantity").default(1).notNull(),
+    note: text("note"),
+    cityName: varchar("cityName", { length: 100 }),
+    status: mysqlEnum("status", ["active", "withdrawn"]).default("active").notNull(),
+    authorizationVersion: int("authorizationVersion").default(1).notNull(),
+    activeDedupeKey: varchar("activeDedupeKey", { length: 191 }),
+    requestId: varchar("requestId", { length: 64 }).notNull(),
+    lastRequestId: varchar("lastRequestId", { length: 64 }).notNull(),
+    withdrawnAt: timestamp("withdrawnAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({
+    requestUnique: uniqueIndex("funding_pledges_request_uq").on(table.requestId),
+    lastRequestUnique: uniqueIndex("funding_pledges_last_request_uq").on(table.lastRequestId),
+    activeDedupeUnique: uniqueIndex("funding_pledges_active_dedupe_uq").on(table.activeDedupeKey),
+    supporterStatusIndex: index("funding_pledges_supporter_status_idx").on(table.supporterAccountId, table.status),
+    campaignStatusIndex: index("funding_pledges_campaign_status_idx").on(table.campaignId, table.status, table.createdAt),
+  }),
+);
+export type FundingPledge = typeof fundingPledges.$inferSelect;
+export type InsertFundingPledge = typeof fundingPledges.$inferInsert;
+
+/** 筹措事件：仅追加保存活动状态、支持与撤回历史，禁止静默覆盖关键事实。 */
+export const fundingCampaignEvents = mysqlTable("funding_campaign_events",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    campaignId: int("campaignId").notNull().references(() => fundingCampaigns.id),
+    sequenceNumber: int("sequenceNumber").notNull(),
+    eventType: varchar("eventType", { length: 64 }).notNull(),
+    actorAccountId: int("actorAccountId").notNull().references(() => users.id),
+    fromStatus: varchar("fromStatus", { length: 32 }),
+    toStatus: varchar("toStatus", { length: 32 }),
+    pledgeId: int("pledgeId").references(() => fundingPledges.id),
+    requestId: varchar("requestId", { length: 64 }).notNull(),
+    detail: json("detail").$type<Record<string, unknown>>().notNull(),
+    occurredAt: timestamp("occurredAt").notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    requestUnique: uniqueIndex("funding_campaign_events_request_uq").on(table.requestId),
+    campaignSequenceUnique: uniqueIndex("funding_campaign_events_campaign_sequence_uq").on(table.campaignId, table.sequenceNumber),
+    timelineIndex: index("funding_campaign_events_timeline_idx").on(table.campaignId, table.occurredAt),
+    pledgeIndex: index("funding_campaign_events_pledge_idx").on(table.pledgeId),
+  }),
+);
+export type FundingCampaignEvent = typeof fundingCampaignEvents.$inferSelect;
+
+// ============ V4 统一内容创作、发现与可信业务关联 ============
+
+export const contentPosts = mysqlTable("content_posts",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    publicCode: varchar("publicCode", { length: 36 }).notNull(),
+    authorAccountId: int("authorAccountId").notNull().references(() => users.id),
+    authorIdentityId: int("authorIdentityId").references(() => businessIdentities.id),
+    organizationId: int("organizationId").references(() => organizations.id),
+    contentType: mysqlEnum("contentType", ["post", "video", "article", "question", "product_review", "tutorial", "idea_progress", "funding_update", "repair_case"]).notNull(),
+    title: varchar("title", { length: 180 }).notNull(),
+    summary: varchar("summary", { length: 500 }),
+    body: text("body").notNull(),
+    locationLabel: varchar("locationLabel", { length: 100 }),
+    visibility: mysqlEnum("visibility", ["public", "followers", "private"]).default("private").notNull(),
+    sourceType: mysqlEnum("sourceType", ["personal_experience", "organization_official", "service_case", "platform_verified", "external_public", "ai_assisted", "unverified_claim"]).default("personal_experience").notNull(),
+    sourceStatement: varchar("sourceStatement", { length: 500 }),
+    aiAssisted: boolean("aiAssisted").default(false).notNull(),
+    aiConfirmedAt: timestamp("aiConfirmedAt"),
+    allowComments: boolean("allowComments").default(true).notNull(),
+    status: mysqlEnum("status", ["draft", "ready_to_publish", "reviewing", "published", "rejected", "recommendation_limited", "unpublished", "author_deleted", "platform_banned"]).default("draft").notNull(),
+    moderationReason: varchar("moderationReason", { length: 500 }),
+    authorizationVersion: int("authorizationVersion").default(1).notNull(),
+    createdRequestId: varchar("createdRequestId", { length: 64 }).notNull(),
+    lastRequestId: varchar("lastRequestId", { length: 64 }).notNull(),
+    publishedAt: timestamp("publishedAt"),
+    deletedAt: timestamp("deletedAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({
+    publicCodeUnique: uniqueIndex("content_posts_public_code_uq").on(table.publicCode),
+    createdRequestUnique: uniqueIndex("content_posts_created_request_uq").on(table.createdRequestId),
+    lastRequestUnique: uniqueIndex("content_posts_last_request_uq").on(table.lastRequestId),
+    authorStatusIndex: index("content_posts_author_status_idx").on(table.authorAccountId, table.status, table.updatedAt),
+    discoveryIndex: index("content_posts_discovery_idx").on(table.status, table.visibility, table.publishedAt),
+    typeDiscoveryIndex: index("content_posts_type_discovery_idx").on(table.contentType, table.status, table.publishedAt),
+    locationIndex: index("content_posts_location_idx").on(table.locationLabel, table.status, table.publishedAt),
+  }),
+);
+export type ContentPost = typeof contentPosts.$inferSelect;
+export type InsertContentPost = typeof contentPosts.$inferInsert;
+
+export const contentMedia = mysqlTable("content_media",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    postId: int("postId").notNull().references(() => contentPosts.id),
+    fileId: int("fileId").notNull().references(() => storedFiles.id),
+    mediaType: mysqlEnum("mediaType", ["image", "video"]).notNull(),
+    purpose: mysqlEnum("purpose", ["cover", "body"]).default("body").notNull(),
+    sortOrder: int("sortOrder").default(0).notNull(),
+    status: mysqlEnum("status", ["active", "removed"]).default("active").notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    postFileUnique: uniqueIndex("content_media_post_file_uq").on(table.postId, table.fileId),
+    postOrderIndex: index("content_media_post_order_idx").on(table.postId, table.status, table.sortOrder),
+  }),
+);
+
+export const contentRelations = mysqlTable("content_relations",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    postId: int("postId").notNull().references(() => contentPosts.id),
+    relationType: mysqlEnum("relationType", ["demand", "idea", "funding_project", "product", "product_unit", "listing", "repair", "service", "donation", "recycling", "account", "organization"]).notNull(),
+    relationId: int("relationId").notNull(),
+    relationLabel: varchar("relationLabel", { length: 180 }),
+    createdByAccountId: int("createdByAccountId").notNull().references(() => users.id),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    relationUnique: uniqueIndex("content_relations_post_relation_uq").on(table.postId, table.relationType, table.relationId),
+    targetIndex: index("content_relations_target_idx").on(table.relationType, table.relationId),
+  }),
+);
+
+export const contentTags = mysqlTable("content_tags",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    normalizedName: varchar("normalizedName", { length: 64 }).notNull(),
+    displayName: varchar("displayName", { length: 64 }).notNull(),
+    status: mysqlEnum("status", ["active", "disabled"]).default("active").notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({ nameUnique: uniqueIndex("content_tags_normalized_name_uq").on(table.normalizedName) }),
+);
+
+export const contentTagLinks = mysqlTable("content_tag_links",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    postId: int("postId").notNull().references(() => contentPosts.id),
+    tagId: int("tagId").notNull().references(() => contentTags.id),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    linkUnique: uniqueIndex("content_tag_links_post_tag_uq").on(table.postId, table.tagId),
+    tagIndex: index("content_tag_links_tag_idx").on(table.tagId, table.postId),
+  }),
+);
+
+export const contentInteractions = mysqlTable("content_interactions",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    postId: int("postId").notNull().references(() => contentPosts.id),
+    accountId: int("accountId").notNull().references(() => users.id),
+    interactionType: mysqlEnum("interactionType", ["like", "favorite", "share", "view", "product_click", "listing_click", "idea_click"]).notNull(),
+    active: boolean("active").default(true).notNull(),
+    requestId: varchar("requestId", { length: 64 }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({
+    accountInteractionUnique: uniqueIndex("content_interactions_account_type_uq").on(table.postId, table.accountId, table.interactionType),
+    requestUnique: uniqueIndex("content_interactions_request_uq").on(table.requestId),
+    postTypeIndex: index("content_interactions_post_type_idx").on(table.postId, table.interactionType, table.active),
+  }),
+);
+
+export const contentComments = mysqlTable("content_comments",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    postId: int("postId").notNull().references(() => contentPosts.id),
+    authorAccountId: int("authorAccountId").notNull().references(() => users.id),
+    parentCommentId: int("parentCommentId"),
+    body: text("body").notNull(),
+    status: mysqlEnum("status", ["published", "author_deleted", "platform_removed"]).default("published").notNull(),
+    requestId: varchar("requestId", { length: 64 }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    deletedAt: timestamp("deletedAt"),
+  },
+  (table) => ({
+    requestUnique: uniqueIndex("content_comments_request_uq").on(table.requestId),
+    postTimeIndex: index("content_comments_post_time_idx").on(table.postId, table.status, table.createdAt),
+  }),
+);
+
+export const contentFollows = mysqlTable("content_follows",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    followerAccountId: int("followerAccountId").notNull().references(() => users.id),
+    followedAccountId: int("followedAccountId").notNull().references(() => users.id),
+    active: boolean("active").default(true).notNull(),
+    requestId: varchar("requestId", { length: 64 }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({
+    followUnique: uniqueIndex("content_follows_pair_uq").on(table.followerAccountId, table.followedAccountId),
+    requestUnique: uniqueIndex("content_follows_request_uq").on(table.requestId),
+    followerIndex: index("content_follows_follower_idx").on(table.followerAccountId, table.active),
+    followedIndex: index("content_follows_followed_idx").on(table.followedAccountId, table.active),
+  }),
+);
+
+export const contentReports = mysqlTable("content_reports",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    postId: int("postId").notNull().references(() => contentPosts.id),
+    reporterAccountId: int("reporterAccountId").notNull().references(() => users.id),
+    reasonCode: varchar("reasonCode", { length: 64 }).notNull(),
+    detail: varchar("detail", { length: 1000 }),
+    status: mysqlEnum("status", ["submitted", "reviewing", "resolved", "dismissed"]).default("submitted").notNull(),
+    requestId: varchar("requestId", { length: 64 }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    resolvedAt: timestamp("resolvedAt"),
+  },
+  (table) => ({
+    reporterPostUnique: uniqueIndex("content_reports_reporter_post_uq").on(table.postId, table.reporterAccountId),
+    requestUnique: uniqueIndex("content_reports_request_uq").on(table.requestId),
+    statusIndex: index("content_reports_status_idx").on(table.status, table.createdAt),
+  }),
+);
+
+export const contentModerationRecords = mysqlTable("content_moderation_records",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    postId: int("postId").notNull().references(() => contentPosts.id),
+    actorAccountId: int("actorAccountId").references(() => users.id),
+    moderationType: mysqlEnum("moderationType", ["automated", "manual"]).notNull(),
+    decision: mysqlEnum("decision", ["approved", "rejected", "limited", "banned"]).notNull(),
+    reasonCode: varchar("reasonCode", { length: 64 }).notNull(),
+    detail: json("detail").$type<Record<string, unknown>>().notNull(),
+    requestId: varchar("requestId", { length: 64 }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    requestUnique: uniqueIndex("content_moderation_records_request_uq").on(table.requestId),
+    postTimeIndex: index("content_moderation_records_post_time_idx").on(table.postId, table.createdAt),
+  }),
+);
+
+export const contentMetrics = mysqlTable("content_metrics", {
+  postId: int("postId").primaryKey().references(() => contentPosts.id),
+  viewCount: int("viewCount").default(0).notNull(),
+  likeCount: int("likeCount").default(0).notNull(),
+  favoriteCount: int("favoriteCount").default(0).notNull(),
+  commentCount: int("commentCount").default(0).notNull(),
+  shareCount: int("shareCount").default(0).notNull(),
+  productClickCount: int("productClickCount").default(0).notNull(),
+  listingClickCount: int("listingClickCount").default(0).notNull(),
+  ideaClickCount: int("ideaClickCount").default(0).notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export const contentDrafts = mysqlTable("content_drafts",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    postId: int("postId").notNull().references(() => contentPosts.id),
+    versionNo: int("versionNo").notNull(),
+    snapshot: json("snapshot").$type<Record<string, unknown>>().notNull(),
+    savedByAccountId: int("savedByAccountId").notNull().references(() => users.id),
+    requestId: varchar("requestId", { length: 64 }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    versionUnique: uniqueIndex("content_drafts_post_version_uq").on(table.postId, table.versionNo),
+    requestUnique: uniqueIndex("content_drafts_request_uq").on(table.requestId),
+  }),
+);
+
+export const creatorProfiles = mysqlTable("creator_profiles",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    accountId: int("accountId").notNull().references(() => users.id),
+    displayName: varchar("displayName", { length: 100 }),
+    bio: varchar("bio", { length: 500 }),
+    verificationLabel: varchar("verificationLabel", { length: 100 }),
+    publishedCount: int("publishedCount").default(0).notNull(),
+    followerCount: int("followerCount").default(0).notNull(),
+    followingCount: int("followingCount").default(0).notNull(),
+    totalViewCount: int("totalViewCount").default(0).notNull(),
+    totalLikeCount: int("totalLikeCount").default(0).notNull(),
+    totalFavoriteCount: int("totalFavoriteCount").default(0).notNull(),
+    totalCommentCount: int("totalCommentCount").default(0).notNull(),
+    productClickCount: int("productClickCount").default(0).notNull(),
+    ideaClickCount: int("ideaClickCount").default(0).notNull(),
+    listingClickCount: int("listingClickCount").default(0).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({ accountUnique: uniqueIndex("creator_profiles_account_uq").on(table.accountId) }),
+);
+
+/** V4 runnable-commerce extensions reuse listings, orders and sandbox payments. */
+export const listingProductLinks = mysqlTable("listing_product_links",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    listingId: int("listingId").notNull().references(() => listings.id),
+    productModelId: int("productModelId").notNull().references(() => productModels.id),
+    productUnitId: int("productUnitId").references(() => productUnits.id),
+    linkedByAccountId: int("linkedByAccountId").notNull().references(() => users.id),
+    requestId: varchar("requestId", { length: 64 }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    listingUnique: uniqueIndex("listing_product_links_listing_uq").on(table.listingId),
+    requestUnique: uniqueIndex("listing_product_links_request_uq").on(table.requestId),
+    productIndex: index("listing_product_links_product_idx").on(table.productModelId, table.listingId),
+    unitIndex: index("listing_product_links_unit_idx").on(table.productUnitId, table.listingId),
+  }),
+);
+
+export const listingSkus = mysqlTable("listing_skus",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    listingId: int("listingId").notNull().references(() => listings.id),
+    skuCode: varchar("skuCode", { length: 64 }).notNull(),
+    title: varchar("title", { length: 180 }).notNull(),
+    attributes: json("attributes").$type<Record<string, string>>().notNull(),
+    price: int("price").notNull(),
+    stock: int("stock").notNull(),
+    status: mysqlEnum("status", ["active", "inactive", "sold_out"]).default("active").notNull(),
+    createdRequestId: varchar("createdRequestId", { length: 64 }).notNull(),
+    lastRequestId: varchar("lastRequestId", { length: 64 }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({
+    listingCodeUnique: uniqueIndex("listing_skus_listing_code_uq").on(table.listingId, table.skuCode),
+    createdRequestUnique: uniqueIndex("listing_skus_created_request_uq").on(table.createdRequestId),
+    lastRequestUnique: uniqueIndex("listing_skus_last_request_uq").on(table.lastRequestId),
+    listingStatusIndex: index("listing_skus_listing_status_idx").on(table.listingId, table.status),
+  }),
+);
+
+export const userAddresses = mysqlTable("user_addresses",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    accountId: int("accountId").notNull().references(() => users.id),
+    recipientName: varchar("recipientName", { length: 100 }).notNull(),
+    phone: varchar("phone", { length: 32 }).notNull(),
+    province: varchar("province", { length: 64 }).notNull(),
+    city: varchar("city", { length: 64 }).notNull(),
+    district: varchar("district", { length: 64 }).notNull(),
+    addressLine: varchar("addressLine", { length: 255 }).notNull(),
+    postalCode: varchar("postalCode", { length: 16 }),
+    isDefault: boolean("isDefault").default(false).notNull(),
+    status: mysqlEnum("status", ["active", "deleted"]).default("active").notNull(),
+    createdRequestId: varchar("createdRequestId", { length: 64 }).notNull(),
+    lastRequestId: varchar("lastRequestId", { length: 64 }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({
+    createdRequestUnique: uniqueIndex("user_addresses_created_request_uq").on(table.createdRequestId),
+    lastRequestUnique: uniqueIndex("user_addresses_last_request_uq").on(table.lastRequestId),
+    accountStatusIndex: index("user_addresses_account_status_idx").on(table.accountId, table.status, table.isDefault),
+  }),
+);
+
+export const shoppingCarts = mysqlTable("shopping_carts",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    buyerAccountId: int("buyerAccountId").notNull().references(() => users.id),
+    status: mysqlEnum("status", ["active", "checked_out", "abandoned"]).default("active").notNull(),
+    activeDedupeKey: varchar("activeDedupeKey", { length: 64 }),
+    checkedOutAt: timestamp("checkedOutAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({
+    activeDedupeUnique: uniqueIndex("shopping_carts_active_dedupe_uq").on(table.activeDedupeKey),
+    buyerStatusIndex: index("shopping_carts_buyer_status_idx").on(table.buyerAccountId, table.status),
+  }),
+);
+
+export const shoppingCartItems = mysqlTable("shopping_cart_items",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    cartId: int("cartId").notNull().references(() => shoppingCarts.id),
+    skuId: int("skuId").notNull().references(() => listingSkus.id),
+    quantity: int("quantity").notNull(),
+    lastRequestId: varchar("lastRequestId", { length: 64 }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({
+    cartSkuUnique: uniqueIndex("shopping_cart_items_cart_sku_uq").on(table.cartId, table.skuId),
+    requestUnique: uniqueIndex("shopping_cart_items_request_uq").on(table.lastRequestId),
+    cartIndex: index("shopping_cart_items_cart_idx").on(table.cartId, table.id),
+  }),
+);
+
+export const commerceCheckoutRequests = mysqlTable("commerce_checkout_requests",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    buyerAccountId: int("buyerAccountId").notNull().references(() => users.id),
+    requestId: varchar("requestId", { length: 64 }).notNull(),
+    orderId: int("orderId").notNull().references(() => orders.id),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    requestUnique: uniqueIndex("commerce_checkout_requests_request_uq").on(table.requestId),
+    buyerOrderIndex: index("commerce_checkout_requests_buyer_order_idx").on(table.buyerAccountId, table.orderId),
+  }),
+);
+
+export const orderLineItems = mysqlTable("order_line_items",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    orderId: int("orderId").notNull().references(() => orders.id),
+    listingId: int("listingId").notNull().references(() => listings.id),
+    skuId: int("skuId").notNull().references(() => listingSkus.id),
+    skuCode: varchar("skuCode", { length: 64 }).notNull(),
+    title: varchar("title", { length: 180 }).notNull(),
+    attributes: json("attributes").$type<Record<string, string>>().notNull(),
+    quantity: int("quantity").notNull(),
+    unitPrice: int("unitPrice").notNull(),
+    lineAmount: int("lineAmount").notNull(),
+    productModelId: int("productModelId").references(() => productModels.id),
+    productUnitId: int("productUnitId").references(() => productUnits.id),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    orderSkuUnique: uniqueIndex("order_line_items_order_sku_uq").on(table.orderId, table.skuId),
+    orderIndex: index("order_line_items_order_idx").on(table.orderId, table.id),
+  }),
+);
+
+export const orderShippingSnapshots = mysqlTable("order_shipping_snapshots",
+  {
+    orderId: int("orderId").primaryKey().references(() => orders.id),
+    sourceAddressId: int("sourceAddressId").references(() => userAddresses.id),
+    recipientName: varchar("recipientName", { length: 100 }).notNull(),
+    phoneMasked: varchar("phoneMasked", { length: 32 }).notNull(),
+    phoneEncrypted: varbinary("phoneEncrypted", { length: 512 }).notNull(),
+    province: varchar("province", { length: 64 }).notNull(),
+    city: varchar("city", { length: 64 }).notNull(),
+    district: varchar("district", { length: 64 }).notNull(),
+    addressLine: varchar("addressLine", { length: 255 }).notNull(),
+    postalCode: varchar("postalCode", { length: 16 }),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+);

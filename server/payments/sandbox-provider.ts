@@ -6,6 +6,9 @@ export class SandboxPaymentProvider implements PaymentProvider {
   readonly name = "sandbox";
 
   async confirmPayment(request: ProviderPaymentRequest): Promise<ProviderPaymentResult> {
+    if (request.idempotencyKey.includes("simulate-failure")) {
+      return { success: false, failedReason: "SANDBOX_SIMULATED_FAILURE", raw: { sandbox: true, simulated: "failure" } };
+    }
     const suffix = crypto.createHash("sha256").update(`pay:${request.paymentNo}:${request.idempotencyKey}`).digest("hex").slice(0, 24);
     return { success: true, providerTransactionNo: `SBX-PAY-${suffix}`, raw: { sandbox: true, paymentNo: request.paymentNo } };
   }

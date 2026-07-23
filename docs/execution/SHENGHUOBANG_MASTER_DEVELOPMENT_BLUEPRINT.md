@@ -35,6 +35,8 @@ Approved By: Product Direction Confirmed By User
 
 三层不是三个独立 App。它们共享统一账号、身份、组织、项目、物品、订单、资金、文件、消息、权限和审计。
 
+内容生态横向连接三层：内容创作负责生产，发现负责展示与分发，统一发布中心负责入口，创作者中心负责管理与转化数据。它与商城、创意和产品追溯同级，不是简单发现信息流。详细规格见 [内容生态蓝图](../architecture/CONTENT_CREATION_DISCOVERY_ECOSYSTEM_BLUEPRINT.md)。
+
 ## 3. 最终系统骨架
 
 ### 六个参与者概念

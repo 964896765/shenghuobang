@@ -6,6 +6,7 @@ import { drizzle } from "drizzle-orm/mysql2";
 import { migrate } from "drizzle-orm/mysql2/migrator";
 import mysql from "mysql2/promise";
 
+import { createMysqlConnectionOptions } from "./lib/mysql-test-config.mjs";
 import { assertSafeA2DatabaseUrl } from "./lib/v33-a2-contract.mjs";
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -21,7 +22,8 @@ if (!databaseUrl) {
   process.exit(0);
 }
 
-const { databaseName } = assertSafeA2DatabaseUrl(databaseUrl);
+const safety = assertSafeA2DatabaseUrl(databaseUrl);
+const { databaseName } = safety;
 const root = process.cwd();
 let temporaryMigrationRoot;
 let connection;
@@ -30,6 +32,10 @@ function parseMysqlVersion(versionText) {
   const match = String(versionText).match(/^(\d+)\.(\d+)\.(\d+)/);
   if (!match) throw new Error(`Unable to parse MySQL version: ${versionText}`);
   return match.slice(1).map(Number);
+}
+
+function countSchemaTables(schemaText) {
+  return (schemaText.match(/mysqlTable\(/g) ?? []).length;
 }
 
 async function countApplicationTables() {
@@ -61,7 +67,20 @@ async function directoryCounts() {
 }
 
 try {
-  connection = await mysql.createConnection(databaseUrl);
+  console.log(
+    JSON.stringify({
+      status: "INFO",
+      code: "A2-EMPTY-DB-SAFETY-CHECK",
+      host: safety.summary.host,
+      port: safety.summary.port,
+      database: safety.summary.database,
+      safe: true,
+    }),
+  );
+
+  connection = await mysql.createConnection(
+    createMysqlConnectionOptions(databaseUrl, { includeDatabase: true }),
+  );
   const [[versionRow]] = await connection.query("SELECT VERSION() AS version");
   const mysqlVersion = versionRow.version;
   const [major, minor, patch] = parseMysqlVersion(mysqlVersion);
@@ -85,6 +104,12 @@ try {
   const fullJournal = JSON.parse(
     await readFile(path.join(root, "drizzle", "meta", "_journal.json"), "utf8"),
   );
+  const baselineSnapshot = JSON.parse(
+    await readFile(path.join(root, "drizzle", "meta", "0014_snapshot.json"), "utf8"),
+  );
+  const schemaText = await readFile(path.join(root, "drizzle", "schema.ts"), "utf8");
+  const expectedBaselineTables = Object.keys(baselineSnapshot.tables ?? {}).length;
+  const expectedFinalTables = countSchemaTables(schemaText);
   const baselineJournal = {
     ...fullJournal,
     entries: fullJournal.entries.slice(0, 15),
@@ -103,17 +128,17 @@ try {
   const database = drizzle(connection);
   await migrate(database, { migrationsFolder: temporaryMigrationRoot });
   const baselineCount = await countApplicationTables();
-  if (baselineCount !== 69) {
+  if (baselineCount !== expectedBaselineTables) {
     throw new Error(
-      `Baseline journal 0000-0014 produced ${baselineCount} tables instead of 69`,
+      `Baseline journal 0000-0014 produced ${baselineCount} tables instead of ${expectedBaselineTables}`,
     );
   }
 
   await migrate(database, { migrationsFolder: path.join(root, "drizzle") });
   const firstA21Count = await countApplicationTables();
-  if (firstA21Count !== 75) {
+  if (firstA21Count !== expectedFinalTables) {
     throw new Error(
-      `A2.1 first migration produced ${firstA21Count} tables instead of 75`,
+      `Full migration produced ${firstA21Count} tables instead of ${expectedFinalTables}`,
     );
   }
   const firstSeedCounts = await directoryCounts();
@@ -157,6 +182,8 @@ try {
       status: "PASS",
       databaseName,
       mysqlVersion,
+      expectedBaselineTables,
+      expectedFinalTables,
       baselineTables: baselineCount,
       firstA21Tables: firstA21Count,
       secondA21Tables: secondA21Count,

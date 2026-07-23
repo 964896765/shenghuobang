@@ -22,8 +22,8 @@ CREATE TABLE `migration_runs` (
 	`failureCode` varchar(64),
 	`failureDetail` json,
 	`version` int NOT NULL DEFAULT 1,
-	`createdAt` timestamp(3) NOT NULL DEFAULT (now()),
-	`updatedAt` timestamp(3) NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+	`createdAt` timestamp(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+	`updatedAt` timestamp(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
 	CONSTRAINT `migration_runs_migrationRunId` PRIMARY KEY(`migrationRunId`),
 	CONSTRAINT `migration_runs_version_baseline_seq_uq` UNIQUE(`migrationVersion`,`sourceBaseline`,`runSequence`),
 	CONSTRAINT `migration_runs_parent_not_self_ck` CHECK(`migration_runs`.`parentMigrationRunId` is null or `migration_runs`.`parentMigrationRunId` <> `migration_runs`.`migrationRunId`),
@@ -60,15 +60,15 @@ CREATE TABLE `migration_checkpoints` (
 	`lastErrorCode` varchar(64),
 	`lastErrorDetail` json,
 	`version` int NOT NULL DEFAULT 1,
-	`createdAt` timestamp(3) NOT NULL DEFAULT (now()),
-	`updatedAt` timestamp(3) NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+	`createdAt` timestamp(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+	`updatedAt` timestamp(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
 	CONSTRAINT `migration_checkpoints_id` PRIMARY KEY(`id`),
 	CONSTRAINT `migration_checkpoints_run_key_uq` UNIQUE(`migrationRunId`,`checkpointKey`),
 	CONSTRAINT `migration_checkpoints_counts_ck` CHECK(`migration_checkpoints`.`processedCount` >= 0 and `migration_checkpoints`.`succeededCount` >= 0 and `migration_checkpoints`.`failedCount` >= 0 and `migration_checkpoints`.`skippedCount` >= 0 and `migration_checkpoints`.`processedCount` = `migration_checkpoints`.`succeededCount` + `migration_checkpoints`.`failedCount` + `migration_checkpoints`.`skippedCount`),
 	CONSTRAINT `migration_checkpoints_batch_size_ck` CHECK(`migration_checkpoints`.`batchSize` between 1 and 500)
 );
 --> statement-breakpoint
-ALTER TABLE `migration_checkpoints` ADD CONSTRAINT `migration_checkpoints_migrationRunId_migration_runs_migrationRunId_fk` FOREIGN KEY (`migrationRunId`) REFERENCES `migration_runs`(`migrationRunId`) ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE `migration_checkpoints` ADD CONSTRAINT `migration_checkpoints_run_fk` FOREIGN KEY (`migrationRunId`) REFERENCES `migration_runs`(`migrationRunId`) ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE `migration_runs` ADD CONSTRAINT `migration_runs_requestedByAccountId_users_id_fk` FOREIGN KEY (`requestedByAccountId`) REFERENCES `users`(`id`) ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE `migration_runs` ADD CONSTRAINT `migration_runs_parent_fk` FOREIGN KEY (`parentMigrationRunId`) REFERENCES `migration_runs`(`migrationRunId`) ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX `migration_checkpoints_run_status_phase_idx` ON `migration_checkpoints` (`migrationRunId`,`status`,`phase`);--> statement-breakpoint

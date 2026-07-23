@@ -2,6 +2,12 @@ import "dotenv/config";
 import path from "node:path";
 import { readFile, readdir } from "node:fs/promises";
 import mysql, { type ResultSetHeader, type RowDataPacket } from "mysql2/promise";
+
+import {
+  assertSafeLocalTestDatabaseServer,
+  createMysqlConnectionOptions,
+  resolveMysqlAdminUrlFromEnv,
+} from "./lib/mysql-test-config.mjs";
 import { runV32DataRepair } from "./repair-v32-data";
 
 const DATABASE_NAME = "shenghuobang_v32_upgrade";
@@ -16,8 +22,11 @@ async function apply(connection: mysql.Connection, file: string) {
 }
 
 async function main() {
-  const source = new URL(process.env.MYSQL_INTEGRATION_URL ?? process.env.DATABASE_URL ?? "mysql://root:password@127.0.0.1:3306/mysql");
-  const connection = await mysql.createConnection({ host: source.hostname, port: Number(source.port || 3306), user: decodeURIComponent(source.username), password: decodeURIComponent(source.password), multipleStatements: true });
+  const { rawUrl: adminRawUrl } = resolveMysqlAdminUrlFromEnv({ consumerName: "v3.2 upgrade test" });
+  assertSafeLocalTestDatabaseServer(adminRawUrl, { consumerName: "v3.2 upgrade test" });
+  const connection = await mysql.createConnection(
+    createMysqlConnectionOptions(adminRawUrl, { multipleStatements: true }),
+  );
   try {
     await connection.query(`DROP DATABASE IF EXISTS \`${DATABASE_NAME}\`; CREATE DATABASE \`${DATABASE_NAME}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; USE \`${DATABASE_NAME}\`;`);
     const migrations = (await readdir(path.resolve("drizzle"))).filter((file) => /^\d{4}_.+\.sql$/.test(file)).sort();

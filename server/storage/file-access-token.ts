@@ -14,7 +14,7 @@ export function signFileAccess(claims: FileAccessClaims, secret = ENV.fileSignin
 
 export function verifyFileAccess(claims: FileAccessClaims, signature: string, secret = ENV.fileSigningSecret, now = Date.now()) {
   if (!Number.isSafeInteger(claims.fileId) || !Number.isSafeInteger(claims.userId) || claims.expires < Math.floor(now / 1000)) return false;
-  if (!/^[a-f0-9]{64}$/i.test(signature) || !/^[a-f0-9-]{16,64}$/i.test(claims.nonce) || !/^[a-f0-9]{8,64}$/i.test(claims.version)) return false;
+  if (!/^[a-f0-9]{64}$/i.test(signature) || !/^[a-f0-9-]{16,64}$/i.test(claims.nonce) || !/^[A-Za-z0-9._-]{1,64}$/.test(claims.version)) return false;
   try {
     const expected = Buffer.from(signFileAccess(claims, secret), "hex");
     const actual = Buffer.from(signature, "hex");

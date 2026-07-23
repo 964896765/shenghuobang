@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { KeyboardAvoidingView, Platform, ScrollView, Text, View } from "react-native";
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 
 import { ScreenContainer } from "@/components/screen-container";
@@ -30,6 +30,8 @@ export default function ListingDetailScreen() {
   const { user, isAuthenticated } = useAuth();
   const utils = trpc.useUtils();
   const detail = trpc.listings.detail.useQuery({ id: listingId }, { enabled: !Number.isNaN(listingId) });
+  const commerce = trpc.commerce.listingDetail.useQuery({ listingId }, { enabled: !Number.isNaN(listingId) });
+  const addresses = trpc.commerce.addresses.useQuery(undefined, { enabled: isAuthenticated });
 
   const [error, setError] = useState("");
   const [buyVisible, setBuyVisible] = useState(false);
@@ -42,6 +44,8 @@ export default function ListingDetailScreen() {
   const [applyReason, setApplyReason] = useState("");
   const [acceptOfferTarget, setAcceptOfferTarget] = useState<number | null>(null);
   const [selectAppTarget, setSelectAppTarget] = useState<number | null>(null);
+  const [selectedSkuId, setSelectedSkuId] = useState<number | null>(null);
+  const [skuQuantity, setSkuQuantity] = useState(1);
 
   const invalidate = () => {
     utils.listings.detail.invalidate({ id: listingId });
@@ -124,6 +128,14 @@ export default function ListingDetailScreen() {
   const startChat = trpc.messagesRouter.start.useMutation({
     onSuccess: (res) => router.push(`/chat/${res.conversationId}` as any),
   });
+  const addToCart = trpc.commerce.addToCart.useMutation({
+    onSuccess: async () => { await utils.commerce.cart.invalidate(); router.push("/cart" as never); },
+    onError: (e) => setError(e.message),
+  });
+  const buySkuNow = trpc.commerce.buyNow.useMutation({
+    onSuccess: async (result) => { await Promise.all([utils.orders.list.invalidate(), utils.commerce.cart.invalidate()]); router.push(`/orders/${result.orderId}` as never); },
+    onError: (e) => setError(e.message),
+  });
 
   if (detail.isLoading) {
     return (
@@ -158,6 +170,8 @@ export default function ListingDetailScreen() {
   const canAct = listing.status === "published" && !isSeller;
   const imageUrls = (listing.imageUrls ?? []).map(listingImageUrl);
   const myApplication = applications.find((a) => a.applicantId === user?.id);
+  const commerceSkus = commerce.data?.skus ?? [];
+  const selectedSku = commerceSkus.find((sku) => sku.id === selectedSkuId) ?? commerceSkus.find((sku) => sku.status === "active");
 
   return (
     <ScreenContainer edges={["top", "left", "right", "bottom"]}>
@@ -203,11 +217,49 @@ export default function ListingDetailScreen() {
             ) : null}
           </View>
 
+          {commerce.data?.modelPublicCode ? (
+            <View className="mt-4 rounded-2xl border border-primary/20 bg-primary/10 p-4">
+              <Text className="text-sm font-bold text-foreground">关联可信产品：{commerce.data.productName}</Text>
+              <View className="mt-3 flex-row gap-2">
+                <PrimaryButton title="产品详情" small variant="outline" onPress={() => router.push(`/products/${commerce.data!.modelPublicCode}` as never)} />
+                {commerce.data.unitPublicCode ? <PrimaryButton title="产品护照" small variant="outline" onPress={() => router.push(`/products/passport/${commerce.data!.unitPublicCode}` as never)} /> : null}
+              </View>
+            </View>
+          ) : null}
+
+          {commerceSkus.length ? (
+            <View className="mt-4 rounded-2xl border border-border bg-surface p-4">
+              <Text className="text-base font-bold text-foreground">选择规格</Text>
+              {commerceSkus.map((sku) => (
+                <Pressable key={sku.id} disabled={sku.status !== "active"} onPress={() => setSelectedSkuId(sku.id)} className={`mt-2 rounded-xl border p-3 ${selectedSku?.id === sku.id ? "border-primary bg-primary/10" : "border-border"}`}>
+                  <View className="flex-row items-center justify-between"><Text className="font-semibold text-foreground">{sku.title}</Text><StatusBadge label={sku.status === "active" ? `库存 ${sku.stock}` : "已售罄"} tone={sku.status === "active" ? "green" : "gray"} small /></View>
+                  <Text className="mt-1 text-lg font-bold text-action">¥{sku.price}</Text>
+                  <Text className="mt-1 text-xs text-muted">{Object.entries(sku.attributes).map(([key, value]) => `${key}: ${value}`).join(" · ") || sku.skuCode}</Text>
+                </Pressable>
+              ))}
+              {!isSeller && selectedSku ? (
+                <View className="mt-4">
+                  <View className="mb-3 flex-row items-center gap-3"><Text className="text-sm text-muted">数量</Text><PrimaryButton title="−" small variant="muted" onPress={() => setSkuQuantity((value) => Math.max(1, value - 1))} /><Text className="font-bold text-foreground">{skuQuantity}</Text><PrimaryButton title="+" small variant="muted" onPress={() => setSkuQuantity((value) => Math.min(selectedSku.stock, value + 1))} /></View>
+                  <View className="flex-row gap-2">
+                    <View className="flex-1"><PrimaryButton title="加入购物车" variant="outline" loading={addToCart.isPending} onPress={() => isAuthenticated ? addToCart.mutate({ skuId: selectedSku.id, quantity: skuQuantity, requestId: `cart-add-${Date.now()}` }) : startLogin()} /></View>
+                    <View className="flex-1"><PrimaryButton title="立即购买" variant="action" loading={buySkuNow.isPending} onPress={() => {
+                      if (!isAuthenticated) return startLogin();
+                      const address = addresses.data?.find((item) => item.isDefault) ?? addresses.data?.[0];
+                      if (!address) return router.push("/addresses?returnTo=listing" as never);
+                      buySkuNow.mutate({ skuId: selectedSku.id, quantity: skuQuantity, addressId: address.id, requestId: `buy-now-${Date.now()}` });
+                    }} /></View>
+                  </View>
+                </View>
+              ) : null}
+              {isSeller ? <View className="mt-3"><PrimaryButton title="管理产品关联与 SKU" variant="outline" onPress={() => router.push(`/listings/${listing.id}/skus` as never)} /></View> : null}
+            </View>
+          ) : isSeller ? <View className="mt-4"><PrimaryButton title="配置产品关联与 SKU" variant="outline" onPress={() => router.push(`/listings/${listing.id}/skus` as never)} /></View> : null}
+
           {/* 买家操作 */}
           {canAct ? (
             <View className="mt-4">
               <View className="flex-row gap-3">
-                {modes.includes("fixed_price") && listing.price ? (
+                {modes.includes("fixed_price") && listing.price && commerceSkus.length === 0 ? (
                   <View className="flex-1">
                     <PrimaryButton
                       title={`¥${listing.price} 立即拍下`}

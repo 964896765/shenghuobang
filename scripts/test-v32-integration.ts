@@ -1,7 +1,14 @@
 import "dotenv/config";
 import path from "node:path";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import mysql, { type ResultSetHeader, type RowDataPacket } from "mysql2/promise";
+
+import {
+  assertSafeLocalTestDatabaseServer,
+  createMysqlConnectionOptions,
+  replaceMysqlDatabaseName,
+  resolveMysqlAdminUrlFromEnv,
+} from "./lib/mysql-test-config.mjs";
 
 const DATABASE_NAME = "shenghuobang_v32_integration";
 
@@ -17,17 +24,23 @@ async function applyMigration(connection: mysql.Connection, file: string) {
   await connection.query(sql);
 }
 
+async function applyMigrationsAfter(connection: mysql.Connection, afterPrefix: string) {
+  const files = (await readdir(path.resolve(process.cwd(), "drizzle")))
+    .filter((file) => /^\d{4}_.+\.sql$/.test(file))
+    .sort()
+    .filter((file) => file > afterPrefix);
+  for (const file of files) {
+    await applyMigration(connection, file);
+  }
+}
+
 async function main() {
-  const sourceUrl = new URL(process.env.MYSQL_INTEGRATION_URL ?? process.env.DATABASE_URL ?? "mysql://root:password@127.0.0.1:3306/mysql");
-  const admin = await mysql.createConnection({
-    host: sourceUrl.hostname,
-    port: Number(sourceUrl.port || 3306),
-    user: decodeURIComponent(sourceUrl.username),
-    password: decodeURIComponent(sourceUrl.password),
-    multipleStatements: true,
-  });
-  const testUrl = new URL(sourceUrl.toString());
-  testUrl.pathname = `/${DATABASE_NAME}`;
+  const { rawUrl: adminRawUrl } = resolveMysqlAdminUrlFromEnv({ consumerName: "v3.2 integration test" });
+  assertSafeLocalTestDatabaseServer(adminRawUrl, { consumerName: "v3.2 integration test" });
+  const admin = await mysql.createConnection(
+    createMysqlConnectionOptions(adminRawUrl, { multipleStatements: true }),
+  );
+  const testUrl = replaceMysqlDatabaseName(adminRawUrl, DATABASE_NAME);
   const results: string[] = [];
   try {
     await admin.query(`DROP DATABASE IF EXISTS \`${DATABASE_NAME}\`; CREATE DATABASE \`${DATABASE_NAME}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; USE \`${DATABASE_NAME}\`;`);
@@ -64,13 +77,14 @@ async function main() {
       "0013 Push Token 停用字段未完整创建",
     );
     results.push("V3.2.2 Push Token 数据升级到 0013");
+    await applyMigrationsAfter(admin, "0013_gorgeous_gargoyle.sql");
     const itemId = await scalar<number>(admin, "SELECT itemId value FROM listings WHERE id=?", [historical.insertId]);
     check(Number(itemId) > 0, "历史 listing 未回填 itemId");
     check(await scalar<number>(admin, "SELECT COUNT(*) value FROM item_ownership_history WHERE itemId=? AND transferType='created'", [itemId]) === 1, "历史物品初始所有权未回填");
     check(await scalar<number>(admin, "SELECT COUNT(*) value FROM listing_modes WHERE listingId=?", [historical.insertId]) === 2, "历史流转方式未拆分");
     results.push("历史 listing 迁移为 item + listing");
 
-    process.env.DATABASE_URL = testUrl.toString();
+    process.env.DATABASE_URL = testUrl;
     const db = await import("../server/db");
 
     const purchases = await Promise.allSettled([

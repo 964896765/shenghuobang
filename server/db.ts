@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNotNull, isNull, like, lt, lte, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, like, lt, lte, ne, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { addScheduleDays, applyProjectAmountDelta, canCreateQuoteVersion, projectAgreementStatus } from "../shared/project-rules";
 import {
@@ -21,6 +21,9 @@ import {
   projectChanges,
   projectAcceptances,
   projectMemberships,
+  projectMembershipRoles,
+  projectRoleCapabilities,
+  projectRoles,
   complaints,
   complaintEvidence,
   listings,
@@ -46,17 +49,30 @@ import {
   notificationDeliveries,
   devicePushTokens,
   storedFiles,
+  contentPosts,
   fileAccessLogs,
   auditLogs,
   reviews,
   creditEvents,
+  orderLineItems,
+  listingSkus,
+  paymentEvents,
+  escrowRecords,
+  escrowReleases,
+  productUnits,
+  productPassportEvents,
   settlements,
   settlementItems,
 } from "../drizzle/schema";
-import { normalizeMoney } from "./domain/money";
+import { addMoney, moneyToCents, normalizeMoney, subtractMoney } from "./domain/money";
 import { emitRealtimeEvent } from "./event-bus";
 import { getPushProvider } from "./notifications/registry";
 import { logger } from "./_core/logger";
+import {
+  assertProductUnitTransition,
+  normalizePassportOccurredAt,
+  productPassportEventHash,
+} from "./services/product-lifecycle-service";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -64,7 +80,12 @@ let _db: ReturnType<typeof drizzle> | null = null;
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
-      _db = drizzle(process.env.DATABASE_URL);
+      // Keep TIMESTAMP serialization and hydration deterministic. Passport event
+      // hashes include their occurrence time, so relying on the host timezone can
+      // make a value hash differently after a database round trip.
+      const databaseUrl = new URL(process.env.DATABASE_URL);
+      databaseUrl.searchParams.set("timezone", "Z");
+      _db = drizzle(databaseUrl.toString());
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;
@@ -289,6 +310,111 @@ export async function getProfilesByUserIds(userIds: number[]) {
   if (userIds.length === 0) return [];
   const db = await requireDb();
   return db.select().from(userProfiles).where(inArray(userProfiles.userId, userIds));
+}
+
+export async function listActiveProjectMembers(projectId: number) {
+  const db = await requireDb();
+  const rows = await db.select({
+    membershipId: projectMemberships.id,
+    accountId: projectMemberships.accountId,
+    businessIdentityId: projectMemberships.businessIdentityId,
+    confidentialityClearance: projectMemberships.confidentialityClearance,
+    joinedAt: projectMemberships.joinedAt,
+    userName: users.name,
+    nickname: userProfiles.nickname,
+    avatarUrl: userProfiles.avatarUrl,
+    cityName: userProfiles.cityName,
+    roleCode: projectMembershipRoles.roleCode,
+    roleName: projectRoles.name,
+  }).from(projectMemberships)
+    .innerJoin(users, eq(users.id, projectMemberships.accountId))
+    .leftJoin(userProfiles, eq(userProfiles.userId, projectMemberships.accountId))
+    .leftJoin(
+      projectMembershipRoles,
+      and(
+        eq(projectMembershipRoles.projectId, projectMemberships.projectId),
+        eq(projectMembershipRoles.projectMembershipId, projectMemberships.id),
+        eq(projectMembershipRoles.status, "active"),
+      ),
+    )
+    .leftJoin(
+      projectRoles,
+      and(
+        eq(projectRoles.code, projectMembershipRoles.roleCode),
+        eq(projectRoles.status, "active"),
+      ),
+    )
+    .where(and(eq(projectMemberships.projectId, projectId), eq(projectMemberships.status, "active")))
+    .orderBy(asc(projectMemberships.joinedAt), asc(projectMemberships.id));
+  const members = new Map<number, {
+    membershipId: number;
+    accountId: number;
+    businessIdentityId: number | null;
+    displayName: string;
+    avatarUrl: string | null;
+    cityName: string | null;
+    confidentialityClearance: string;
+    joinedAt: Date;
+    roleCodes: string[];
+    roleNames: string[];
+  }>();
+  for (const row of rows) {
+    const existing = members.get(row.membershipId);
+    const displayName = row.nickname?.trim() || row.userName?.trim() || `成员#${row.accountId}`;
+    if (existing) {
+      if (row.roleCode && !existing.roleCodes.includes(row.roleCode)) existing.roleCodes.push(row.roleCode);
+      if (row.roleName && !existing.roleNames.includes(row.roleName)) existing.roleNames.push(row.roleName);
+      continue;
+    }
+    members.set(row.membershipId, {
+      membershipId: row.membershipId,
+      accountId: row.accountId,
+      businessIdentityId: row.businessIdentityId,
+      displayName,
+      avatarUrl: row.avatarUrl,
+      cityName: row.cityName,
+      confidentialityClearance: row.confidentialityClearance,
+      joinedAt: row.joinedAt,
+      roleCodes: row.roleCode ? [row.roleCode] : [],
+      roleNames: row.roleName ? [row.roleName] : [],
+    });
+  }
+  return [...members.values()];
+}
+
+export async function getProjectMemberAccessView(projectId: number, accountId: number) {
+  const db = await requireDb();
+  const rows = await db.select({
+    membershipId: projectMemberships.id,
+    roleCode: projectMembershipRoles.roleCode,
+    capabilityCode: projectRoleCapabilities.capabilityCode,
+  }).from(projectMemberships)
+    .leftJoin(
+      projectMembershipRoles,
+      and(
+        eq(projectMembershipRoles.projectId, projectMemberships.projectId),
+        eq(projectMembershipRoles.projectMembershipId, projectMemberships.id),
+        eq(projectMembershipRoles.status, "active"),
+      ),
+    )
+    .leftJoin(
+      projectRoleCapabilities,
+      and(
+        eq(projectRoleCapabilities.roleCode, projectMembershipRoles.roleCode),
+        eq(projectRoleCapabilities.status, "active"),
+      ),
+    )
+    .where(and(
+      eq(projectMemberships.projectId, projectId),
+      eq(projectMemberships.accountId, accountId),
+      eq(projectMemberships.status, "active"),
+    ));
+  if (rows.length === 0) return null;
+  return {
+    membershipId: rows[0].membershipId,
+    roleCodes: [...new Set(rows.map((row) => row.roleCode).filter((value): value is string => Boolean(value)))],
+    capabilityCodes: [...new Set(rows.map((row) => row.capabilityCode).filter((value): value is string => Boolean(value)))],
+  };
 }
 
 // ============ 工程师 ============
@@ -965,7 +1091,9 @@ export async function acceptMilestoneTransaction(milestoneId: number, ownerId: n
     const remaining = milestoneList.filter((m) => m.id !== milestoneId && m.status !== "accepted" && m.status !== "cancelled");
     if (remaining.length === 0) {
       await tx.update(projects).set({ status: "completed", completedAt: new Date() }).where(eq(projects.id, project.id));
-      await tx.update(needs).set({ status: "solved" }).where(eq(needs.id, project.needId));
+      if (project.needId != null) {
+        await tx.update(needs).set({ status: "solved" }).where(eq(needs.id, project.needId));
+      }
       const existingOrder = await tx.select().from(orders).where(and(eq(orders.orderType, "project"), eq(orders.refId, project.id))).limit(1);
       if (existingOrder.length === 0) {
         await tx.insert(orders).values({
@@ -1931,21 +2059,148 @@ export async function completeOrderTransaction(orderId: number, buyerId: number)
     if (!order) throw new Error("订单不存在");
     if (order.buyerId !== buyerId) throw new Error("只有买家可以确认收货");
     if (order.status !== "pending_acceptance") throw new Error("当前状态不能确认收货");
-    await tx.update(orders).set({ status:"completed", completedAt:new Date() }).where(eq(orders.id, orderId));
-    await tx.insert(orderStatusLogs).values({ orderId, fromStatus:"pending_acceptance", toStatus:"completed", note:"买家确认收货,订单完成" });
     if (order.orderType === "listing") {
-      const listingRows=await tx.select().from(listings).where(eq(listings.id, order.refId)).for("update").limit(1);
-      const listing=listingRows[0];
-      if (listing) {
+      const commerceLines = await tx.select().from(orderLineItems).where(eq(orderLineItems.orderId, orderId)).for("update");
+      if (commerceLines.length) {
         const transferType = order.amount === 0 ? "given_away" : "sold";
-        await tx.update(listings).set({ status:"completed", itemStatus:transferType }).where(eq(listings.id, listing.id));
-        if (listing.itemId) {
-          const itemRows=await tx.select().from(items).where(eq(items.id, listing.itemId)).for("update").limit(1);
-          const item=itemRows[0];
-          if (!item || item.ownerId !== order.sellerId) throw new Error("物品所有权状态已变化");
-          await tx.update(items).set({ ownerId:order.buyerId, status:transferType }).where(eq(items.id, listing.itemId));
-          await tx.insert(itemOwnershipHistory).values({ itemId:listing.itemId, fromUserId:order.sellerId, toUserId:order.buyerId, transferType, orderId });
-          await tx.insert(itemStatusLogs).values({ itemId:listing.itemId, fromStatus:item.status, toStatus:transferType, operatorId:buyerId, reason:`订单 ${orderId} 完成流转` });
+        const listingIds = [...new Set(commerceLines.map((line) => line.listingId))];
+        const lockedListings = await tx.select().from(listings).where(inArray(listings.id, listingIds)).orderBy(listings.id).for("update");
+        if (lockedListings.length !== listingIds.length || lockedListings.some((listing) => listing.sellerId !== order.sellerId)) {
+          throw new Error("商品或卖家状态已变化");
+        }
+
+        const unitQuantities = new Map<number, number>();
+        for (const line of commerceLines) {
+          if (line.productUnitId != null) unitQuantities.set(line.productUnitId, (unitQuantities.get(line.productUnitId) ?? 0) + line.quantity);
+        }
+        if ([...unitQuantities.values()].some((quantity) => quantity !== 1)) throw new Error("单件产品订单数量不一致");
+        const unitIds = [...unitQuantities.keys()].sort((left, right) => left - right);
+        const lockedUnits = unitIds.length
+          ? await tx.select().from(productUnits).where(inArray(productUnits.id, unitIds)).orderBy(productUnits.id).for("update")
+          : [];
+        if (lockedUnits.length !== unitIds.length) throw new Error("订单关联的单件产品不存在");
+
+        const transferredItemIds = new Set<number>();
+        for (const unit of lockedUnits) {
+          if (unit.currentOwnerAccountId !== order.sellerId) throw new Error("单件产品所有权状态已变化");
+          assertProductUnitTransition(unit.status, "transferred");
+          const [lastEvent] = await tx.select().from(productPassportEvents)
+            .where(eq(productPassportEvents.productUnitId, unit.id))
+            .orderBy(desc(productPassportEvents.sequenceNumber))
+            .for("update")
+            .limit(1);
+          const occurredAt = normalizePassportOccurredAt(new Date());
+          const requestId = `order-transfer:${order.id}:unit:${unit.id}`;
+          const sequenceNumber = (lastEvent?.sequenceNumber ?? 0) + 1;
+          const previousEventHash = lastEvent?.eventHash ?? null;
+          const detail = { orderId: order.id, fromOwnerAccountId: order.sellerId, toOwnerAccountId: order.buyerId, transferType };
+          const eventHash = productPassportEventHash({
+            productUnitId: unit.id,
+            sequenceNumber,
+            eventType: "ownership_transferred",
+            actorAccountId: buyerId,
+            actorOrganizationId: null,
+            fromStatus: unit.status,
+            toStatus: "transferred",
+            visibility: "owner",
+            sourceType: "order",
+            sourceId: String(order.id),
+            requestId,
+            detail,
+            previousEventHash,
+            occurredAt,
+          });
+          await tx.insert(productPassportEvents).values({
+            productUnitId: unit.id,
+            sequenceNumber,
+            eventType: "ownership_transferred",
+            actorAccountId: buyerId,
+            actorOrganizationId: null,
+            fromStatus: unit.status,
+            toStatus: "transferred",
+            visibility: "owner",
+            sourceType: "order",
+            sourceId: String(order.id),
+            requestId,
+            detail,
+            previousEventHash,
+            eventHash,
+            occurredAt,
+          });
+          await tx.update(productUnits).set({
+            currentOwnerAccountId: order.buyerId,
+            status: "transferred",
+            authorizationVersion: unit.authorizationVersion + 1,
+            lastRequestId: requestId,
+          }).where(eq(productUnits.id, unit.id));
+
+          if (unit.linkedItemId != null) {
+            const [item] = await tx.select().from(items).where(eq(items.id, unit.linkedItemId)).for("update").limit(1);
+            if (!item || item.ownerId !== order.sellerId) throw new Error("物品所有权状态已变化");
+            await tx.update(items).set({ ownerId: order.buyerId, status: transferType }).where(eq(items.id, item.id));
+            await tx.insert(itemOwnershipHistory).values({ itemId: item.id, fromUserId: order.sellerId, toUserId: order.buyerId, transferType, orderId });
+            await tx.insert(itemStatusLogs).values({ itemId: item.id, fromStatus: item.status, toStatus: transferType, operatorId: buyerId, reason: `订单 ${orderId} 完成流转` });
+            transferredItemIds.add(item.id);
+          }
+        }
+
+        for (const listing of lockedListings) {
+          const [availableSku] = await tx.select({ id: listingSkus.id }).from(listingSkus)
+            .where(and(eq(listingSkus.listingId, listing.id), eq(listingSkus.status, "active"), sql`${listingSkus.stock} > 0`))
+            .limit(1);
+          await tx.update(listings).set({ status: availableSku ? listing.status : "completed", itemStatus: transferType }).where(eq(listings.id, listing.id));
+          if (listing.itemId && !transferredItemIds.has(listing.itemId)) {
+            const [item] = await tx.select().from(items).where(eq(items.id, listing.itemId)).for("update").limit(1);
+            if (!item || item.ownerId !== order.sellerId) throw new Error("物品所有权状态已变化");
+            await tx.update(items).set({ ownerId: order.buyerId, status: transferType }).where(eq(items.id, item.id));
+            await tx.insert(itemOwnershipHistory).values({ itemId: item.id, fromUserId: order.sellerId, toUserId: order.buyerId, transferType, orderId });
+            await tx.insert(itemStatusLogs).values({ itemId: item.id, fromStatus: item.status, toStatus: transferType, operatorId: buyerId, reason: `订单 ${orderId} 完成流转` });
+          }
+        }
+
+        if (order.amount > 0) {
+          const [escrow] = await tx.select().from(escrowRecords).where(eq(escrowRecords.orderId, order.id)).for("update").limit(1);
+          if (!escrow) throw new Error("订单托管记录不存在");
+          if (!(escrow.status === "funded" || escrow.status === "partially_refunded")) throw new Error("订单托管状态不能释放");
+          const releaseAmount = subtractMoney(escrow.totalAmount, addMoney(escrow.releasedAmount, escrow.refundedAmount));
+          if (moneyToCents(releaseAmount) <= 0n) throw new Error("订单托管资金已处理");
+          const releasedAmount = addMoney(escrow.releasedAmount, releaseAmount);
+          await tx.insert(escrowReleases).values({
+            releaseNo: `REL-ORDER-${order.id}`,
+            escrowId: escrow.id,
+            settlementId: null,
+            amount: releaseAmount,
+            currency: escrow.currency,
+            status: "success",
+            idempotencyKey: `order-complete:${order.id}`,
+            releasedBy: buyerId,
+            releasedAt: new Date(),
+          });
+          const fullyHandled = moneyToCents(addMoney(releasedAmount, escrow.refundedAmount)) === moneyToCents(escrow.totalAmount);
+          await tx.update(escrowRecords).set({ releasedAmount, status: fullyHandled ? "released" : "partially_released" }).where(eq(escrowRecords.id, escrow.id));
+          await tx.insert(paymentEvents).values({
+            paymentId: escrow.paymentId,
+            eventType: "escrow_released",
+            amount: releaseAmount,
+            currency: escrow.currency,
+            externalEventNo: `escrow-release-order:${order.id}`,
+            detail: { orderId: order.id, operatorId: buyerId },
+          });
+        }
+      } else {
+        const listingRows=await tx.select().from(listings).where(eq(listings.id, order.refId)).for("update").limit(1);
+        const listing=listingRows[0];
+        if (listing) {
+          const transferType = order.amount === 0 ? "given_away" : "sold";
+          await tx.update(listings).set({ status:"completed", itemStatus:transferType }).where(eq(listings.id, listing.id));
+          if (listing.itemId) {
+            const itemRows=await tx.select().from(items).where(eq(items.id, listing.itemId)).for("update").limit(1);
+            const item=itemRows[0];
+            if (!item || item.ownerId !== order.sellerId) throw new Error("物品所有权状态已变化");
+            await tx.update(items).set({ ownerId:order.buyerId, status:transferType }).where(eq(items.id, listing.itemId));
+            await tx.insert(itemOwnershipHistory).values({ itemId:listing.itemId, fromUserId:order.sellerId, toUserId:order.buyerId, transferType, orderId });
+            await tx.insert(itemStatusLogs).values({ itemId:listing.itemId, fromStatus:item.status, toStatus:transferType, operatorId:buyerId, reason:`订单 ${orderId} 完成流转` });
+          }
         }
       }
     } else if (order.orderType === "recycling") {
@@ -1960,6 +2215,8 @@ export async function completeOrderTransaction(orderId: number, buyerId: number)
       await tx.insert(itemOwnershipHistory).values({ itemId: item.id, fromUserId: order.sellerId, toUserId: null, transferType: "recycled", orderId, note: "回收订单完成，物品退出可交易状态" });
       await tx.insert(itemStatusLogs).values({ itemId: item.id, fromStatus: item.status, toStatus: "recycled", operatorId: buyerId, reason: `回收订单 ${orderId} 完成` });
     }
+    await tx.update(orders).set({ status:"completed", completedAt:new Date() }).where(eq(orders.id, orderId));
+    await tx.insert(orderStatusLogs).values({ orderId, fromStatus:"pending_acceptance", toStatus:"completed", note:"买家确认收货,订单完成" });
     return order;
   });
 }
@@ -2301,6 +2558,11 @@ export async function canManageRelatedFile(userId: number, role: string, related
     const rows = await db.select({ sellerId: listings.sellerId }).from(listings).where(eq(listings.id, relatedEntityId)).limit(1);
     return rows[0]?.sellerId === userId;
   }
+  if (relatedEntityType === "content_post") {
+    const db = await requireDb();
+    const rows = await db.select({ authorAccountId: contentPosts.authorAccountId }).from(contentPosts).where(eq(contentPosts.id, relatedEntityId)).limit(1);
+    return rows[0]?.authorAccountId === userId;
+  }
   return false;
 }
 
@@ -2359,6 +2621,106 @@ export async function listNotificationFailures(limit = 100) {
 export async function createReview(data: typeof reviews.$inferInsert) {
   const db = await requireDb();
   await db.insert(reviews).values(data);
+}
+
+export async function createOrderReviewTransaction(input: {
+  orderId: number;
+  reviewerId: number;
+  overallRating: number;
+  dimensions?: Record<string, number>;
+  tags: string[];
+  imageFileIds: number[];
+  content?: string;
+  requestId: string;
+}) {
+  const database = await requireDb();
+  return database.transaction(async (tx) => {
+    const duplicateRows = await tx.select().from(reviews)
+      .where(and(eq(reviews.reviewerId, input.reviewerId), eq(reviews.requestId, input.requestId)))
+      .limit(1);
+    if (duplicateRows[0]) return { review: duplicateRows[0], duplicate: true };
+
+    const orderRows = await tx.select().from(orders).where(eq(orders.id, input.orderId)).for("update").limit(1);
+    const order = orderRows[0];
+    if (!order) throw new Error("订单不存在");
+    if (order.status !== "completed") throw new Error("订单完成后才能评价");
+    const isBuyer = order.buyerId === input.reviewerId;
+    const isSeller = order.sellerId === input.reviewerId;
+    if (!isBuyer && !isSeller) throw new Error("你不是该订单参与方");
+    if ((isBuyer && order.buyerReviewed) || (isSeller && order.sellerReviewed)) throw new Error("你已评价过该订单");
+
+    if (input.imageFileIds.length) {
+      const files = await tx.select().from(storedFiles).where(inArray(storedFiles.id, input.imageFileIds));
+      if (files.length !== input.imageFileIds.length || files.some((file) => file.ownerId !== input.reviewerId || file.status !== "available" || file.virusScanStatus !== "clean" || !file.mimeType.startsWith("image/"))) {
+        throw new Error("评价图片不存在、不可用或尚未通过安全扫描");
+      }
+    }
+
+    const revieweeId = isBuyer ? order.sellerId : order.buyerId;
+    const impactDimension = order.orderType === "project" ? "service_reliability" : "trade_reliability";
+    const result = await tx.insert(reviews).values({
+      orderId: order.id,
+      reviewerId: input.reviewerId,
+      revieweeId,
+      overallRating: input.overallRating,
+      dimensions: input.dimensions,
+      tags: input.tags,
+      imageFileIds: input.imageFileIds,
+      content: input.content,
+      businessSource: `order:${order.orderType}`,
+      impactDimension,
+      requestId: input.requestId,
+    });
+    const reviewId = Number(result[0].insertId);
+    await tx.update(orders).set(isBuyer ? { buyerReviewed: true } : { sellerReviewed: true }).where(eq(orders.id, order.id));
+    const scoreChange = input.overallRating >= 4 ? 1 : input.overallRating <= 2 ? -2 : 0;
+    await tx.insert(creditEvents).values({
+      userId: revieweeId,
+      actorAccountId: input.reviewerId,
+      eventType: "review_received",
+      scoreChange,
+      reason: `收到${input.overallRating}星评价`,
+      businessSource: `order:${order.orderType}`,
+      impactDimension,
+      refType: "review",
+      refId: reviewId,
+      requestId: `credit:${input.requestId}`,
+    });
+    if (scoreChange) {
+      await tx.update(userProfiles)
+        .set({ creditScore: sql`GREATEST(${userProfiles.creditScore} + ${scoreChange}, 0)` })
+        .where(eq(userProfiles.userId, revieweeId));
+    }
+    await tx.insert(auditLogs).values({
+      actorId: input.reviewerId,
+      actorRole: "user",
+      action: "review.order.create",
+      resourceType: "review",
+      resourceId: String(reviewId),
+      detail: { orderId: order.id, revieweeId, scoreChange, impactDimension, imageCount: input.imageFileIds.length },
+    });
+    const reviewRows = await tx.select().from(reviews).where(eq(reviews.id, reviewId)).limit(1);
+    return { review: reviewRows[0]!, duplicate: false };
+  });
+}
+
+export async function listOrderReviews(orderId: number) {
+  const database = await requireDb();
+  return database.select().from(reviews).where(eq(reviews.orderId, orderId)).orderBy(asc(reviews.createdAt));
+}
+
+export async function replyToReviewTransaction(input: { reviewId: number; actorId: number; reply: string }) {
+  const database = await requireDb();
+  return database.transaction(async (tx) => {
+    const rows = await tx.select().from(reviews).where(eq(reviews.id, input.reviewId)).for("update").limit(1);
+    const review = rows[0];
+    if (!review) throw new Error("评价不存在");
+    if (review.revieweeId !== input.actorId) throw new Error("只有被评价方可以回复");
+    if (review.reply) throw new Error("该评价已经回复");
+    await tx.update(reviews).set({ reply: input.reply, repliedBy: input.actorId, repliedAt: new Date() }).where(eq(reviews.id, review.id));
+    await tx.insert(auditLogs).values({ actorId: input.actorId, actorRole: "user", action: "review.reply", resourceType: "review", resourceId: String(review.id) });
+    return { ...review, reply: input.reply, repliedBy: input.actorId, repliedAt: new Date() };
+  });
 }
 
 export async function listReviewsForUser(userId: number) {
