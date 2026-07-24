@@ -15,7 +15,7 @@ export function getApiBaseUrl(): string {
     return `${protocol}//${hostname}:3000`;
   }
 
-  return "http://localhost:3000";
+  return __DEV__ ? "http://localhost:3000" : "https://invalid.shenghuobang.local";
 }
 
 export function getApiConfigurationIssue(): string | null {

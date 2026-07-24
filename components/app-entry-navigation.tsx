@@ -7,10 +7,10 @@ import { resolveEntryAccess } from "@/shared/navigation/routePermissions";
 
 export function useAppEntryNavigation() {
   const router = useRouter();
-  const { role, isAuthenticated } = useRole();
+  const { role, isAuthenticated, capabilities } = useRole();
 
   return (entry: AppEntry) => {
-    const access = resolveEntryAccess(entry, { role, isAuthenticated });
+    const access = resolveEntryAccess(entry, { role, isAuthenticated, capabilities });
     if (access === "login_required") {
       startLogin();
       return;

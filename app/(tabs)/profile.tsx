@@ -48,17 +48,20 @@ function ProfileInner() {
   const credit = creditLevel(profile?.creditScore ?? 100);
   const roleLabel = role === "engineer" ? "设计师/工程师" : role === "merchant" ? "企业/服务商" : "个人";
   const availableRoleCodes = new Set<string>([role]);
+  const availableCapabilities = new Set<string>();
   let hasOrganizationWorkspace = false;
   for (const item of workspaceQuery.data?.available ?? []) {
     if (!item.available) continue;
+    for (const capabilityCode of item.capabilityCodes ?? []) availableCapabilities.add(capabilityCode);
     if (item.workspaceType === "identity" && "typeCode" in item) {
       for (const code of roleCodesForIdentityType(String(item.typeCode))) availableRoleCodes.add(code);
     }
     if (item.workspaceType === "organization") hasOrganizationWorkspace = true;
   }
   const workspaces = ROLE_ENTRIES.filter((entry) => entry.id === "personal" ||
-    entry.supportedRoles.some((supportedRole) => availableRoleCodes.has(supportedRole)) ||
-    (hasOrganizationWorkspace && entry.id === "enterprise"));
+    ((entry.supportedRoles.some((supportedRole) => availableRoleCodes.has(supportedRole)) ||
+      (hasOrganizationWorkspace && entry.id === "enterprise")) &&
+      entry.requiredCapabilities.every((capability) => availableCapabilities.has(capability))));
 
   return (
     <ScrollView contentContainerStyle={{ paddingBottom: 36 }}>
