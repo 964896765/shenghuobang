@@ -22,6 +22,8 @@ export default function TabLayout() {
 
   return (
     <Tabs
+      initialRouteName="discover"
+      backBehavior="history"
       screenOptions={{
         tabBarActiveTintColor: colors.primary,
         headerShown: false,

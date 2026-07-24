@@ -43,7 +43,7 @@ export function PageHeader({
   return (
     <View className="flex-row items-center px-2 py-2 bg-background">
       <Pressable
-        onPress={onBack ?? (() => (router.canGoBack() ? router.back() : router.replace("/")))}
+        onPress={onBack ?? (() => (router.canGoBack() ? router.back() : router.replace("/(tabs)/discover")))}
         style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1, padding: 8 })}
       >
         <IconSymbol name="chevron.left" size={26} color={colors.foreground} />

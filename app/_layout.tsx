@@ -84,8 +84,8 @@ function BootFailureScreen({ error, retry }: ErrorBoundaryProps) {
           <Pressable className="items-center rounded-2xl border border-border px-4 py-3" onPress={() => router.replace("/login")}>
             <Text className="text-sm font-semibold text-foreground">返回登录</Text>
           </Pressable>
-          <Pressable className="items-center rounded-2xl border border-border px-4 py-3" onPress={() => router.replace("/(tabs)")}>
-            <Text className="text-sm font-semibold text-foreground">返回首页</Text>
+          <Pressable className="items-center rounded-2xl border border-border px-4 py-3" onPress={() => router.replace("/(tabs)/discover")}>
+            <Text className="text-sm font-semibold text-foreground">返回发现</Text>
           </Pressable>
           {buildInfo.apiBaseUrl ? (
             <Pressable className="items-center rounded-2xl border border-border px-4 py-3" onPress={() => Linking.openURL(`${buildInfo.apiBaseUrl}/api/health`)}>

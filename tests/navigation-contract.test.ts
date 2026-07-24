@@ -9,7 +9,14 @@ import { resolveEntryAccess } from "../shared/navigation/routePermissions";
 
 describe("统一 App 导航契约", () => {
   it("固定五个底部入口且顺序稳定", () => {
-    expect(APP_TABS.map((item) => item.title)).toEqual(["首页", "发现", "发布", "消息", "我的"]);
+    const tabIds = APP_TABS.map((item) => item.id);
+    expect(APP_TABS.map((item) => item.title)).toEqual(["发现", "商城", "发布", "消息", "我的"]);
+    expect(APP_TABS).toHaveLength(5);
+    expect(tabIds).not.toContain("home");
+    expect(APP_TABS.find((item) => item.id === "marketplace")).toEqual(
+      expect.objectContaining({ name: "marketplace", title: "商城" }),
+    );
+    expect(APP_TABS[2]).toEqual(expect.objectContaining({ id: "publish", title: "发布" }));
   });
 
   it("固定首页八个核心入口", () => {

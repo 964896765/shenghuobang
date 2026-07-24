@@ -9,35 +9,39 @@ import { PUBLISH_ENTRIES } from "../shared/navigation/publishEntries";
 const source = (path: string) => readFileSync(resolve(process.cwd(), path), "utf8");
 
 describe("可运行雏形统一导航", () => {
-  it("保持首页、发现、发布、消息、我的五个固定 Tab", () => {
-    expect(APP_TABS.map((item) => item.title)).toEqual(["首页", "发现", "发布", "消息", "我的"]);
+  it("保持发现、商城、发布、消息、我的五个固定 Tab", () => {
+    expect(APP_TABS.map((item) => item.title)).toEqual(["发现", "商城", "发布", "消息", "我的"]);
     const layout = source("app/(tabs)/_layout.tsx");
+    expect(layout).toContain('initialRouteName="discover"');
+    expect(layout).toContain('backBehavior="history"');
     expect(layout).toContain("APP_TABS.map");
-    expect(layout).not.toContain("homeTitle");
-    expect(layout).not.toContain("discoverTitle");
+    expect(source("app/(tabs)/index.tsx")).toContain('<Redirect href="/(tabs)/discover" />');
+    expect(source("app/(tabs)/index.tsx")).not.toContain("<GlobalHeader />");
   });
 
-  it("全局位置只有一个 Provider，首页显示唯一维护入口", () => {
+  it("全局位置只有一个 Provider，根入口直接进入公开发现", () => {
     const root = source("app/_layout.tsx");
-    const home = source("app/(tabs)/index.tsx");
     const discover = source("app/(tabs)/discover.tsx");
-    const search = source("app/search.tsx");
-    const engineers = source("app/engineers/index.tsx");
     expect(root).toContain("<GlobalLocationProvider>");
-    expect(home).toContain("<GlobalHeader />");
-    expect(home).toContain("trpc.home.feed.useQuery(location.queryInput)");
-    for (const page of [search, engineers]) {
-      expect(page).not.toContain("<LocationEntry");
-      expect(page).toContain("useGlobalLocation()");
-      expect(page).toContain("location.queryInput");
-    }
     expect(discover).not.toContain("<LocationEntry");
     expect(discover).toContain("useGlobalLocation()");
     expect(discover).toContain("location.region");
+    expect(source("app/login.tsx")).toContain('router.replace("/(tabs)/discover" as never)');
+    expect(source("app/(tabs)/profile.tsx")).toContain('router.replace("/(tabs)/discover" as never)');
+    expect(root).toContain('router.replace("/(tabs)/discover")');
   });
 });
 
 describe("可运行雏形统一入口", () => {
+  it("商城 Tab 与旧产品目录复用同一目录实现", () => {
+    const marketplace = source("app/(tabs)/marketplace.tsx");
+    const products = source("app/products/index.tsx");
+    const sharedCatalog = source("components/marketplace-catalog-screen.tsx");
+    expect(marketplace).toContain("<MarketplaceCatalogScreen");
+    expect(products).toContain("<MarketplaceCatalogScreen");
+    expect(sharedCatalog).toContain("trpc.productModels.publicList.useQuery");
+  });
+
   it("创意进入固定发现频道并复用真实卡片", () => {
     const discover = source("app/(tabs)/discover.tsx");
     expect(DISCOVER_CHANNELS).toContainEqual({ id: "ideas", title: "创意" });

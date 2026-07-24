@@ -34,7 +34,7 @@ export default function LoginScreen() {
       } else {
         await Api.register(normalizedPhone, password, name);
       }
-      router.replace("/" as never);
+      router.replace("/(tabs)/discover" as never);
     } catch (err) {
       setError(err instanceof Error ? err.message : "操作失败，请稍后重试");
     } finally {

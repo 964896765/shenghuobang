@@ -19,9 +19,9 @@ export default function ComingSoonScreen() {
         <Text className="mt-5 text-2xl font-bold text-foreground">{feature}</Text>
         <View className="mt-3"><StatusBadge label={denied ? "当前身份无权限" : "建设中"} tone={denied ? "red" : "orange"} /></View>
         <Text className="mt-4 text-center text-sm leading-6 text-muted">{denied ? "当前身份或组织上下文不具备所需能力。可切换工作台后重试；最终授权仍由服务端决定。" : "入口、返回路径和状态已经接通，业务页面尚未上线。你可以返回上一页继续使用其他功能。"}</Text>
-        <View className="mt-6 w-full"><PrimaryButton title="返回上一页" onPress={() => router.canGoBack() ? router.back() : router.replace("/" as never)} /></View>
+        <View className="mt-6 w-full"><PrimaryButton title="返回上一页" onPress={() => router.canGoBack() ? router.back() : router.replace("/(tabs)/discover" as never)} /></View>
       </View>}
-      <StickyActionBar><PrimaryButton title="返回首页" variant="outline" onPress={() => router.replace("/" as never)} /></StickyActionBar>
+      <StickyActionBar><PrimaryButton title="返回发现" variant="outline" onPress={() => router.replace("/(tabs)/discover" as never)} /></StickyActionBar>
     </ScreenContainer>
   );
 }

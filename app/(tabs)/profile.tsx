@@ -101,7 +101,11 @@ function ProfileInner() {
         confirmText="退出登录"
         danger
         onCancel={() => setLogoutVisible(false)}
-        onConfirm={async () => { setLogoutVisible(false); await logout(); }}
+        onConfirm={async () => {
+          setLogoutVisible(false);
+          await logout();
+          router.replace("/(tabs)/discover" as never);
+        }}
       />
     </ScrollView>
   );

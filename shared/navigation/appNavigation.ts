@@ -68,8 +68,8 @@ export const ALL_NAVIGATION_ROLES: readonly NavigationRole[] = [
 ];
 
 export const APP_TABS = [
-  { id: "home", name: "index", title: "首页", icon: "house.fill" },
   { id: "discover", name: "discover", title: "发现", icon: "safari.fill" },
+  { id: "marketplace", name: "marketplace", title: "商城", icon: "storefront.fill" },
   { id: "publish", name: "publish", title: "发布", icon: "plus.circle.fill" },
   { id: "messages", name: "messages", title: "消息", icon: "message.fill" },
   { id: "profile", name: "profile", title: "我的", icon: "person.fill" },
