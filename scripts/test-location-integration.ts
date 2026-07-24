@@ -70,11 +70,13 @@ async function main() {
     check(await scalar<number>(admin, "SELECT COUNT(*) value FROM user_location_preferences WHERE userId=?", [first.insertId]) === 1, "首次位置未保存");
     results.push("首次设备位置保存并降为约 1 公里精度");
 
-    await caller.location.update({ source: "manual", regionName: "上海市浦东新区", cityName: "上海市" });
+    await caller.location.update({ source: "manual", cityName: "杭州" });
     check(await scalar<number>(admin, "SELECT COUNT(*) value FROM user_location_preferences WHERE userId=?", [first.insertId]) === 1, "重复更新产生重复偏好");
     check(await scalar<string>(admin, "SELECT source value FROM user_location_preferences WHERE userId=?", [first.insertId]) === "manual", "手动地区未覆盖当前来源");
+    check(await scalar<string>(admin, "SELECT cityName value FROM user_location_preferences WHERE userId=?", [first.insertId]) === "杭州", "手动城市未按 cityName 保存");
+    check(await scalar<string | null>(admin, "SELECT regionName value FROM user_location_preferences WHERE userId=?", [first.insertId]) === null, "未知地区的手动城市不应伪造 regionName");
     check(await scalar<string | null>(admin, "SELECT approximateLatitude value FROM user_location_preferences WHERE userId=?", [first.insertId]) === null, "手动地区仍残留设备坐标");
-    results.push("手动地区和重复更新幂等");
+    results.push("手动城市只保存 cityName 且重复更新幂等");
 
     await db.saveLocationPreference({ userId: second.insertId, source: "device", approximateLatitude: 39.98, approximateLongitude: 116.31, regionName: "北京市海淀区", actorRole: "user" });
     const engineers = await caller.engineers.list({ latitude: 39.99, longitude: 116.32, region: "北京市海淀区" });

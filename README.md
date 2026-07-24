@@ -1,12 +1,16 @@
-# 生活帮（独立运行版）
+# 生活帮（V4 Alpha 稳定化分支）
 
-生活帮的正式产品定位是：**连接创意、生产、使用、流转和回收的产品全生命周期协作与资源交易平台。**
+生活帮是连接需求、创意、协作、生产、产品使用、交易、维修、捐赠、回收和可信追溯的产品全生命周期协作与资源交易平台。
 
-当前源码以 V3.2.4 为稳定业务基线，V3.3.0 金额迁移 Phase 1 已完成。产品开发主线已经调整为：
+当前仓库状态：
 
-**身份与权限架构 → 创意落地最小闭环 → 生产协作 → 产品数字档案与流转 → 回收材料闭环**
+- 当前 `main` 基线：`8973608d7580dccaa06f752bbdfa067ed9cd6c1a`
+- 当前正式标签：`v4.0.0-alpha`
+- 当前稳定化分支：`codex/v4-demo-stabilization`
+- 当前重点：GitHub CI、Release 启动、安全、迁移完整性与真机稳定性
+- 当前已知限制：Release APK 仍存在黑屏启动 P1；图片、视频、实体二维码、维修、捐赠、回收和部分弱网真机闭环尚未完成最终证据
 
-当前唯一任务是 **V3.3-A / A1：规格与权限威胁模型**，只整理身份、认证、组织、项目成员、能力权限、数据范围、字段脱敏和迁移方案，不修改业务代码。
+当前源码仍以 V3.2.4 为稳定历史业务基线，但仓库已包含 V3.3-A、V3.3-B 与 V4 Alpha 可运行产品雏形的真实代码、迁移和集成验证，不再以 “V3.3-A / A1 是当前唯一任务” 作为仓库入口说明。
 
 开发前按顺序阅读：
 
@@ -21,7 +25,7 @@
 - [当前 A1 Codex 任务](docs/execution/stages/V3_3_A_BATCH1_CODEX_TASK.md)
 - [本地开发与交付工作流](docs/execution/LOCAL_DEVELOPMENT_WORKFLOW.md)
 
-GitHub 不是本地开发前置条件。每个批次仍需本地可追溯提交、验证报告和干净源码归档。
+GitHub 不是本地开发前置条件。每个批次仍需本地可追溯提交、验证报告和干净源码归档；对 `main` 的修改必须通过 Pull Request，不直接推送。
 
 ## 技术栈
 
@@ -86,10 +90,10 @@ docker compose up -d
 
 ```bash
 pnpm db:migrate
-pnpm db:seed
+ALLOW_DEMO_SEED=true pnpm db:seed
 ```
 
-`db:seed` 现在可以安全重复执行：它按固定演示标识 upsert 用户、资料和演示业务记录，不清空、不删除也不覆盖其他用户数据。可用 `pnpm test:seed:idempotent` 在隔离数据库中连续运行两次并核对计数。
+`db:seed` 仅允许在本地 demo/test/acceptance/dev 数据库执行，且必须显式设置 `ALLOW_DEMO_SEED=true`。它按固定演示标识补齐用户、资料和演示业务记录，不清库、不删除其他用户数据，也不会重写既有演示账号密码。可用 `pnpm test:seed:idempotent` 在隔离数据库中连续运行两次并核对计数。
 
 演示账号：
 
@@ -112,12 +116,30 @@ pnpm db:seed
 pnpm dev
 ```
 
-默认地址：
+默认开发地址：
 
 - Web：`http://localhost:8081`
 - API：`http://localhost:3000`
 - 进程健康检查：`http://localhost:3000/api/health`
 - 服务就绪检查：`http://localhost:3000/api/ready`
+
+Expo 必须通过仓库的受控入口启动：
+
+```bash
+pnpm dev:metro   # Web Metro
+pnpm dev:mobile  # Development Client，局域网模式
+```
+
+两个入口都在当前终端运行，禁止同一仓库并发启动第二个 Expo 实例，不会自动改用
+8082 等其他端口，并将 Metro 转换限制为单 worker。不要使用 `start`、`cmd /k`、
+`Start-Process` 或直接后台启动 `expo start`；停止时在原终端按 Ctrl+C。
+
+LAN Demo 构建与本地开发的区别：
+
+- Development：允许本地 `localhost`、热更新和开发调试能力
+- LAN Demo：必须显式设置 `EXPO_PUBLIC_API_BASE_URL` 和 `EXPO_PUBLIC_WS_BASE_URL` 指向局域网地址，不得使用 `localhost`
+- Sandbox 支付边界：当前 Alpha 仅允许 `PAYMENT_PROVIDER=sandbox`
+- Release 已知问题：Android Release APK 当前仍有黑屏启动 P1，尚不是公开生产发布包
 
 `/api/health` 只证明 Node.js 进程正在响应，不访问数据库。`/api/ready` 会校验 `DATABASE_URL`、`JWT_SECRET`，并对 MySQL 执行 `SELECT 1`；环境缺失或数据库不可用时返回 HTTP 503，适合负载均衡器和编排平台判断是否接收流量。
 

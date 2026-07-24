@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 
@@ -7,6 +8,7 @@ import { EmptyState, ErrorState, LoadingView, SectionHeader } from "@/components
 import { EntryGrid, GlobalHeader } from "@/components/global-navigation";
 import { ScreenContainer } from "@/components/screen-container";
 import { IconSymbol } from "@/components/ui/icon-symbol";
+import { markBootPhase } from "@/lib/boot-diagnostics";
 import { useGlobalLocation } from "@/lib/location-context";
 import { useRole } from "@/lib/role-context";
 import { trpc } from "@/lib/trpc";
@@ -14,6 +16,9 @@ import { HOME_ENTRIES } from "@/shared/navigation/homeEntries";
 
 export default function HomeScreen() {
   const router = useRouter();
+  useEffect(() => {
+    markBootPhase("home rendered");
+  }, []);
   const navigate = useAppEntryNavigation();
   const location = useGlobalLocation();
   const { role, isAuthenticated, profile } = useRole();
@@ -59,7 +64,7 @@ export default function HomeScreen() {
           {feed.isLoading ? <LoadingView text="正在加载推荐内容…" /> : feed.isError ? (
             <ErrorState title="首页加载失败" hint={feed.error.message} onRetry={() => feed.refetch()} />
           ) : (feed.data?.needs ?? []).length === 0 ? (
-            <EmptyState title="当前城市暂无推荐" hint="可切换城市，或发布一条真实需求。" actionTitle="发布需求" onAction={() => navigate(HOME_ENTRIES[0])} />
+            <EmptyState title="当前城市暂无推荐" hint="可切换城市，或发布一条真实需求。" actionTitle="发布需求" onAction={() => router.push("/needs/create" as never)} />
           ) : (
             (feed.data?.needs ?? []).slice(0, 3).map((item) => <NeedCard key={item.id} need={item} />)
           )}

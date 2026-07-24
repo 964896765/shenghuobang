@@ -1,16 +1,23 @@
 require("./scripts/load-env.cjs");
 
+const pkg = require("./package.json");
+
 const bundleId = process.env.APP_BUNDLE_ID?.trim() || "com.shenghuobang.app";
 const publicApiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL?.trim() || "";
 const defaultEasProjectId = "197aef13-6b84-45e3-9c9a-ad87c596971f";
 const easProjectId =
   process.env.EXPO_PUBLIC_EAS_PROJECT_ID?.trim() || defaultEasProjectId;
+const releaseChannel = process.env.EXPO_PUBLIC_RELEASE_CHANNEL?.trim() || "alpha";
+const buildProfile = process.env.EXPO_PUBLIC_BUILD_PROFILE?.trim() || "lan-demo";
+const gitCommit = process.env.EXPO_PUBLIC_GIT_COMMIT?.trim() || "dev";
+const appVersion = "4.0.0";
+const androidVersionCode = 400001;
 
 /** @type {import("expo/config").ExpoConfig} */
 const config = {
   name: "生活帮",
   slug: "shenghuobang",
-  version: "3.2.4",
+  version: appVersion,
   orientation: "portrait",
   icon: "./assets/images/icon.png",
   scheme: "shenghuobang",
@@ -19,7 +26,7 @@ const config = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: bundleId,
-    buildNumber: "324",
+    buildNumber: String(androidVersionCode),
     infoPlist: { ITSAppUsesNonExemptEncryption: false },
   },
   android: {
@@ -37,7 +44,7 @@ const config = {
     // cleartext traffic disabled.
     usesCleartextTraffic: publicApiBaseUrl.startsWith("http://"),
     package: bundleId,
-    versionCode: 324,
+    versionCode: androidVersionCode,
     permissions: ["POST_NOTIFICATIONS"],
   },
   web: {
@@ -92,7 +99,18 @@ const config = {
       { android: { buildArchs: ["armeabi-v7a", "arm64-v8a"], minSdkVersion: 24 } },
     ],
   ],
-  extra: { eas: { projectId: easProjectId } },
+  extra: {
+    eas: { projectId: easProjectId },
+    build: {
+      appVersion,
+      packageVersion: pkg.version,
+      versionCode: androidVersionCode,
+      releaseChannel,
+      buildProfile,
+      gitCommit,
+      apiBaseUrl: publicApiBaseUrl,
+    },
+  },
   experiments: { typedRoutes: true },
 };
 

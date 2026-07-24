@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdir, readFile, rm } from "node:fs/promises";
@@ -48,8 +49,23 @@ async function stop(child: ChildProcess) {
   await Promise.race([new Promise<void>((resolve) => child.once("exit", () => resolve())), new Promise((resolve) => setTimeout(resolve, 3000))]);
   if (child.exitCode == null) child.kill();
 }
-async function token(userId: number, openId: string) {
-  return new SignJWT({ userId, openId, role: "user" }).setProtectedHeader({ alg: "HS256", typ: "JWT" }).setSubject(String(userId)).setIssuedAt().setExpirationTime("1h").sign(new TextEncoder().encode(JWT_SECRET));
+async function token(connection: mysql.Connection, userId: number, openId: string) {
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+  const expirationSeconds = Math.floor(expiresAt.getTime() / 1000);
+  const sessionId = randomUUID().replaceAll("-", "");
+  const token = await new SignJWT({ userId, openId, role: "user", sessionId })
+    .setProtectedHeader({ alg: "HS256", typ: "JWT" })
+    .setIssuedAt()
+    .setJti(sessionId)
+    .setSubject(String(userId))
+    .setExpirationTime(expirationSeconds)
+    .sign(new TextEncoder().encode(JWT_SECRET));
+  const tokenHash = createHash("sha256").update(token).digest("hex");
+  await connection.execute(
+    "INSERT INTO auth_sessions (sessionId,userId,tokenHash,expiresAt,lastSeenAt,createdAt,updatedAt) VALUES (?,?,?,?,NOW(),NOW(),NOW())",
+    [sessionId, userId, tokenHash, expiresAt],
+  );
+  return token;
 }
 async function rejectedWebSocket(url: string, origin?: string) {
   return new Promise<boolean>((resolve) => {
@@ -102,8 +118,8 @@ async function main() {
     const ready = await fetch(`http://127.0.0.1:${PORT}/api/ready`);
     const readyBody = await ready.json() as { ok?: boolean; status?: string };
     check(ready.status === 200 && readyBody.ok && readyBody.status === "ready", "/ready was not ready");
-    const userAToken = await token(userA.insertId, "runtime:a");
-    const userBToken = await token(userB.insertId, "runtime:b");
+    const userAToken = await token(admin, userA.insertId, "runtime:a");
+    const userBToken = await token(admin, userB.insertId, "runtime:b");
     const wsUrl = `ws://127.0.0.1:${PORT}/api/ws`;
     check(await rejectedWebSocket(`${wsUrl}?token=${encodeURIComponent(userAToken)}`), "native client without Origin was accepted");
     check(await rejectedWebSocket(`${wsUrl}?token=${encodeURIComponent(userAToken)}`, "http://evil.test"), "bad Origin was accepted");

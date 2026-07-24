@@ -22,6 +22,25 @@ export type WorkspaceTarget =
   | { workspaceType: "platform"; platformStaffPositionId: number };
 
 const invalidCertificationStatuses = new Set(["revoked", "expired"]);
+const workspaceCapabilitiesByIdentityType: Readonly<Record<string, readonly string[]>> = {
+  repair_provider: ["workspace.service", "workspace.engineer"],
+  service_provider: ["workspace.service"],
+  enterprise_representative: ["workspace.enterprise", "workspace.supply"],
+  nonprofit_representative: ["workspace.nonprofit"],
+  designer: ["workspace.engineer"],
+  manufacturer: ["workspace.supply"],
+  supplier: ["workspace.supply"],
+  recycler: ["workspace.recycling"],
+};
+
+function capabilityCodesForWorkspace(input: {
+  workspaceType: "personal" | "identity" | "organization" | "platform";
+  typeCode?: string | null;
+}): readonly string[] {
+  if (input.workspaceType === "organization") return ["workspace.enterprise"];
+  if (input.workspaceType !== "identity") return [];
+  return workspaceCapabilitiesByIdentityType[input.typeCode ?? ""] ?? [];
+}
 
 export async function listAvailableWorkspaces(accountId: number) {
   const db = await requireDb();
@@ -54,13 +73,22 @@ export async function listAvailableWorkspaces(accountId: number) {
     const certificationStatus = latest?.status === "approved" && latest.expiresAt && latest.expiresAt.getTime() <= Date.now() ? "expired" : latest?.status ?? null;
     const unavailableReason = identity.identityStatus !== "active" ? "IDENTITY_INACTIVE"
       : certificationStatus && invalidCertificationStatuses.has(certificationStatus) ? "CERTIFICATION_INACTIVE" : null;
-    return { workspaceType: "identity" as const, ...identity, certificationCode: latest?.code ?? null, certificationStatus, available: unavailableReason === null, unavailableReason };
+    return {
+      workspaceType: "identity" as const,
+      ...identity,
+      certificationCode: latest?.code ?? null,
+      certificationStatus,
+      available: unavailableReason === null,
+      unavailableReason,
+      capabilityCodes: capabilityCodesForWorkspace({ workspaceType: "identity", typeCode: identity.typeCode }),
+    };
   }));
   const organizationsAvailable = organizationRows.map((row) => ({
     workspaceType: "organization" as const,
     ...row,
     available: row.organizationStatus === "active" && row.membershipStatus === "active",
     unavailableReason: row.organizationStatus !== "active" ? "RESOURCE_STATE_FORBIDDEN" : row.membershipStatus !== "active" ? "ORGANIZATION_MEMBERSHIP_INACTIVE" : null,
+    capabilityCodes: capabilityCodesForWorkspace({ workspaceType: "organization" }),
   }));
   const now = Date.now();
   const platforms = platformRows.map((row) => ({
@@ -69,10 +97,23 @@ export async function listAvailableWorkspaces(accountId: number) {
     positionCode: row.positionCode,
     available: row.status === "active" && row.validFrom.getTime() <= now && (!row.validUntil || row.validUntil.getTime() > now),
     unavailableReason: row.status === "active" ? "STAFF_POSITION_INACTIVE" : "STAFF_POSITION_INACTIVE",
+    capabilityCodes: capabilityCodesForWorkspace({ workspaceType: "platform" }),
   }));
+  const available = [{ workspaceType: "personal" as const, available: true, unavailableReason: null, capabilityCodes: capabilityCodesForWorkspace({ workspaceType: "personal" }) }, ...identities, ...organizationsAvailable, ...platforms];
+  const current = preferenceRows[0] ?? { workspaceType: "personal" as const, identityId: null, organizationId: null, platformStaffPositionId: null, version: 0 };
+  const currentWorkspace = available.find((item) =>
+    current.workspaceType === item.workspaceType
+      && (
+        item.workspaceType === "personal"
+        || ("identityId" in item && item.identityId === current.identityId)
+        || ("organizationId" in item && item.organizationId === current.organizationId)
+        || ("platformStaffPositionId" in item && item.platformStaffPositionId === current.platformStaffPositionId)
+      ),
+  ) ?? available[0];
   return {
-    current: preferenceRows[0] ?? { workspaceType: "personal" as const, identityId: null, organizationId: null, platformStaffPositionId: null, version: 0 },
-    available: [{ workspaceType: "personal" as const, available: true, unavailableReason: null }, ...identities, ...organizationsAvailable, ...platforms],
+    current,
+    available,
+    currentCapabilityCodes: currentWorkspace?.capabilityCodes ?? [],
   };
 }
 

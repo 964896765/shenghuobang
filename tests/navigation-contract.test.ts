@@ -40,12 +40,18 @@ describe("统一 App 导航契约", () => {
   });
 
   it("统一处理未登录、无权限和功能关闭", () => {
-    const protectedEntry = HOME_ENTRIES.find((item) => item.id === "needs")!;
+    const publicEntry = HOME_ENTRIES.find((item) => item.id === "needs")!;
     const disabledEntry = { ...HOME_ENTRIES.find((item) => item.id === "repair")!, enabled: false };
     const engineerEntry = ROLE_ENTRIES.find((item) => item.id === "designer")!;
-    expect(resolveEntryAccess(protectedEntry, { role: "user", isAuthenticated: false })).toBe("login_required");
+    expect(resolveEntryAccess(publicEntry, { role: "user", isAuthenticated: false })).toBe("allowed");
     expect(resolveEntryAccess(disabledEntry, { role: "user", isAuthenticated: true })).toBe("feature_disabled");
     expect(resolveEntryAccess(engineerEntry, { role: "user", isAuthenticated: true })).toBe("permission_denied");
+  });
+
+  it("真正使用 capability 做入口裁剪", () => {
+    const engineerEntry = ROLE_ENTRIES.find((item) => item.id === "designer")!;
+    expect(resolveEntryAccess(engineerEntry, { role: "engineer", isAuthenticated: true, capabilities: [] })).toBe("permission_denied");
+    expect(resolveEntryAccess(engineerEntry, { role: "engineer", isAuthenticated: true, capabilities: ["workspace.engineer"] })).toBe("allowed");
   });
 
   it("把服务端业务身份映射到统一客户端工作台上下文", () => {

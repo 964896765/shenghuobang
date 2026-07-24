@@ -7,14 +7,41 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_BUILD_PROFILE": "development",
+        "EXPO_PUBLIC_RELEASE_CHANNEL": "development"
+      },
       "android": {
         "buildType": "apk"
       }
     },
-    "preview": {
+    "lan-demo": {
       "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_BUILD_PROFILE": "lan-demo",
+        "EXPO_PUBLIC_RELEASE_CHANNEL": "alpha"
+      },
       "android": {
         "buildType": "apk"
+      }
+    },
+    "staging": {
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_BUILD_PROFILE": "staging",
+        "EXPO_PUBLIC_RELEASE_CHANNEL": "staging"
+      },
+      "android": {
+        "buildType": "apk"
+      }
+    },
+    "production": {
+      "env": {
+        "EXPO_PUBLIC_BUILD_PROFILE": "production",
+        "EXPO_PUBLIC_RELEASE_CHANNEL": "production"
+      },
+      "android": {
+        "buildType": "app-bundle"
       }
     }
   }

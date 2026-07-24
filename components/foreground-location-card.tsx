@@ -3,6 +3,7 @@ import { Alert, Pressable, Text, View } from "react-native";
 
 import { AppTextInput, PrimaryButton, StatusBadge } from "@/components/common";
 import { useForegroundLocation } from "@/hooks/use-foreground-location";
+import { formatLocationPreferenceError } from "@/shared/location";
 
 export function ForegroundLocationCard({ compact = false, controller: location }: { compact?: boolean; controller: ReturnType<typeof useForegroundLocation> }) {
   const [manualRegion, setManualRegion] = useState(location.region ?? "");
@@ -40,7 +41,7 @@ export function ForegroundLocationCard({ compact = false, controller: location }
         <View className="mt-3">
           <AppTextInput placeholder="输入城市或地区，例如：杭州市" value={manualRegion} onChangeText={setManualRegion} />
           {manualError ? <Text className="mt-1 text-xs text-error">{manualError}</Text> : null}
-          <Pressable className="mt-3" onPress={() => void location.useManualRegion(manualRegion).then(() => { setManualError(undefined); setShowManual(false); }).catch((cause) => setManualError(cause instanceof Error ? cause.message : "保存失败"))}>
+          <Pressable className="mt-3" onPress={() => void location.useManualRegion(manualRegion).then(() => { setManualError(undefined); setShowManual(false); }).catch((cause) => setManualError(formatLocationPreferenceError(cause)))}>
             <Text className="font-semibold text-primary">使用该城市</Text>
           </Pressable>
         </View>

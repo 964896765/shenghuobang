@@ -2,6 +2,7 @@ import "dotenv/config";
 import express from "express";
 import { createServer } from "http";
 import net from "net";
+import { pathToFileURL } from "url";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerAuthRoutes } from "./auth";
 import { registerStorageProxy } from "./storageProxy";
@@ -28,13 +29,21 @@ function isPortAvailable(port: number): Promise<boolean> {
   });
 }
 
-async function findAvailablePort(startPort: number = 3000): Promise<number> {
-  for (let port = startPort; port < startPort + 20; port++) {
-    if (await isPortAvailable(port)) {
-      return port;
-    }
+export async function resolveListeningPort(options: {
+  preferredPort: number;
+  isProduction: boolean;
+  isPortAvailableFn?: (port: number) => Promise<boolean>;
+}) {
+  const { preferredPort, isProduction, isPortAvailableFn = isPortAvailable } = options;
+  if (isProduction) {
+    if (await isPortAvailableFn(preferredPort)) return preferredPort;
+    logger.error("server.port_in_use", { preferredPort, selectedPort: null, mode: "production" });
+    throw new Error(`port_in_use:${preferredPort}`);
   }
-  throw new Error(`No available port found starting from ${startPort}`);
+  for (let port = preferredPort; port < preferredPort + 20; port += 1) {
+    if (await isPortAvailableFn(port)) return port;
+  }
+  throw new Error(`No available port found starting from ${preferredPort}`);
 }
 
 export async function startServer() {
@@ -96,9 +105,9 @@ export async function startServer() {
   );
 
   const preferredPort = ENV.port;
-  const port = await findAvailablePort(preferredPort);
+  const port = await resolveListeningPort({ preferredPort, isProduction: ENV.isProduction });
 
-  if (port !== preferredPort) {
+  if (!ENV.isProduction && port !== preferredPort) {
     logger.warn("server.port_in_use", { preferredPort, selectedPort: port });
   }
 
@@ -124,7 +133,10 @@ export async function startServer() {
   return { app, server, port };
 }
 
-startServer().catch((error) => {
-  logger.error("server.start_failed", { error });
-  process.exitCode = 1;
-});
+const entryHref = process.argv[1] ? pathToFileURL(process.argv[1]).href : "";
+if (import.meta.url === entryHref) {
+  startServer().catch((error) => {
+    logger.error("server.start_failed", { error });
+    process.exitCode = 1;
+  });
+}

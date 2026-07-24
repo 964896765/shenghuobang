@@ -7,6 +7,9 @@ export type AppRole = "user" | "engineer" | "merchant";
 
 type RoleContextValue = {
   role: AppRole;
+  capabilities: readonly string[];
+  availableIdentityTypes: readonly string[];
+  currentWorkspaceType: "personal" | "identity" | "organization" | "platform";
   profile: {
     nickname?: string | null;
     cityName?: string | null;
@@ -25,6 +28,9 @@ type RoleContextValue = {
 
 const RoleContext = createContext<RoleContextValue>({
   role: "user",
+  capabilities: [],
+  availableIdentityTypes: [],
+  currentWorkspaceType: "personal",
   profile: null,
   isAuthenticated: false,
   authLoading: true,
@@ -55,11 +61,17 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
     const activeIdentity = current?.workspaceType === "identity"
       ? workspaceQuery.data?.available.find((item) => item.workspaceType === "identity" && "identityId" in item && item.identityId === current.identityId)
       : undefined;
+    const availableIdentityTypes = (workspaceQuery.data?.available ?? [])
+      .filter((item): item is typeof item & { workspaceType: "identity"; typeCode: string } => item.workspaceType === "identity" && "typeCode" in item)
+      .map((item) => String(item.typeCode));
     const preferredRole: AppRole = activeIdentity && "typeCode" in activeIdentity
       ? appRoleForIdentityType(String(activeIdentity.typeCode))
       : "user";
     return {
       role: preferredRole,
+      capabilities: workspaceQuery.data?.currentCapabilityCodes ?? [],
+      availableIdentityTypes,
+      currentWorkspaceType: current?.workspaceType ?? "personal",
       profile: p
         ? {
             nickname: p.nickname,

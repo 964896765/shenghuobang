@@ -589,7 +589,7 @@ export class FundingCampaignService {
           assertExpectedVersion(row.authorizationVersion, input.expectedAuthorizationVersion);
           if (!Array.isArray(row.evidence) || row.evidence.length === 0) throw new FundingCampaignServiceError("CAMPAIGN_EVIDENCE_REQUIRED");
           const now = new Date();
-          const startsAt = row.startsAt ?? now;
+          const startsAt = row.startsAt ?? new Date(Math.floor(now.getTime() / 1000) * 1000);
           if (!row.endsAt || row.endsAt <= startsAt || row.endsAt <= now) throw new FundingCampaignServiceError("CAMPAIGN_END_DATE_REQUIRED");
           await tx.update(fundingCampaigns).set({
             status: "active",

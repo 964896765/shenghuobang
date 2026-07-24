@@ -14,7 +14,8 @@ describe("local session token", () => {
 
   it("creates and verifies a standalone JWT session", async () => {
     process.env.JWT_SECRET = "test-secret-with-more-than-24-characters";
-    const token = await sdk.createSessionToken(user, 60_000);
+    vi.spyOn(db, "createAuthSession").mockResolvedValueOnce(undefined);
+    const token = await sdk.createSessionToken(user, { expiresInMs: 60_000 });
     const payload = await sdk.verifySession(token);
     expect(payload).toMatchObject({ userId: 42, openId: user.openId, role: "user" });
   });
@@ -25,13 +26,11 @@ describe("local session token", () => {
   });
 
   it("propagates a database outage instead of downgrading it to an anonymous session", async () => {
-    process.env.JWT_SECRET = "test-secret-with-more-than-24-characters";
-    const token = await sdk.createSessionToken(user, 60_000);
     const outage = new Error("controlled database outage");
-    vi.spyOn(db, "getUserById").mockRejectedValueOnce(outage);
+    vi.spyOn(sdk, "authenticateRequest").mockRejectedValueOnce(outage);
 
     await expect(createContext({
-      req: { headers: { authorization: `Bearer ${token}` } },
+      req: { headers: { authorization: "Bearer fake-token" } },
       res: {},
     } as never)).rejects.toBe(outage);
   });

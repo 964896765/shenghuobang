@@ -2,6 +2,7 @@ import { z } from "zod";
 import crypto from "node:crypto";
 import { COOKIE_NAME } from "../shared/const.js";
 import { getSessionCookieOptions } from "./_core/cookies";
+import { sdk } from "./_core/sdk";
 import { systemRouter } from "./_core/systemRouter";
 import { invokeLLM } from "./_core/llm";
 import { ENV } from "./_core/env";
@@ -51,6 +52,14 @@ const nearbyInputSchema = z.object(nearbyFields).superRefine((value, ctx) => {
     ctx.addIssue({ code: "custom", message: "经纬度必须同时提供" });
   }
 });
+const optionalLocationNameSchema = z.preprocess(
+  (value) => {
+    if (typeof value !== "string") return value;
+    const trimmed = value.trim();
+    return trimmed.length ? trimmed : undefined;
+  },
+  z.string().min(2).max(64).optional(),
+).optional();
 
 async function addNearbyMetadata<T>(
   rows: T[],
@@ -202,8 +211,8 @@ export const appRouter = router({
     }),
     update: protectedProcedure.input(z.object({
       source: z.enum(["device", "manual"]),
-      cityName: z.string().trim().min(2).max(64).optional(),
-      regionName: z.string().trim().min(2).max(64).optional(),
+      cityName: optionalLocationNameSchema,
+      regionName: optionalLocationNameSchema,
       latitude: z.number().min(-90).max(90).optional(),
       longitude: z.number().min(-180).max(180).optional(),
     }).superRefine((value, ctx) => {
@@ -232,7 +241,14 @@ export const appRouter = router({
   }),
   auth: router({
     me: publicProcedure.query((opts) => opts.ctx.user),
-    logout: publicProcedure.mutation(({ ctx }) => {
+    logout: publicProcedure.mutation(async ({ ctx }) => {
+      await sdk.revokeCurrentSession(ctx.req, "logout").catch(() => undefined);
+      const cookieOptions = getSessionCookieOptions(ctx.req);
+      ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
+      return { success: true } as const;
+    }),
+    logoutAll: protectedProcedure.mutation(async ({ ctx }) => {
+      await sdk.revokeAllUserSessions(ctx.user.id, "logout_all");
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
       return { success: true } as const;

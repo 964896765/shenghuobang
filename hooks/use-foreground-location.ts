@@ -6,9 +6,13 @@ import { useAuth } from "@/hooks/use-auth";
 import { readCachedRegion, writeCachedRegion } from "@/lib/location-storage";
 import { trpc } from "@/lib/trpc";
 import {
+  buildDeviceLocationUpdatePayload,
+  buildManualLocationUpdatePayload,
+  formatLocationPreferenceError,
   isLocationOwnerActive,
   locationOwnerKey,
   resolveForegroundPermission,
+  resolveStoredLocationName,
   scopedLocationValue,
 } from "@/shared/location";
 
@@ -101,7 +105,7 @@ export function useForegroundLocation() {
   }, [ownerKey, user?.id]);
 
   useEffect(() => {
-    const stored = preference.data?.regionName ?? preference.data?.cityName;
+    const stored = resolveStoredLocationName(preference.data ?? undefined);
     if (preference.data?.userId === user?.id && stateOwnerKey === ownerKey && stored && !currentRegion) {
       setRegion(stored);
       setLocationState((current) => current === "idle" ? "manual" : current);
@@ -133,11 +137,12 @@ export function useForegroundLocation() {
       setCoordinates(next);
       setPermission("granted");
       let resolvedRegion = currentRegion;
+      let devicePayload = buildDeviceLocationUpdatePayload(next, undefined, currentRegion);
       try {
         const addresses = await Location.reverseGeocodeAsync(next);
         if (!isLocationOwnerActive(requestedOwnerKey, activeOwnerKeyRef.current)) return;
-        const address = addresses[0];
-        resolvedRegion = address?.district ?? address?.subregion ?? address?.city ?? address?.region ?? currentRegion;
+        devicePayload = buildDeviceLocationUpdatePayload(next, addresses[0], currentRegion);
+        resolvedRegion = devicePayload.displayName ?? currentRegion;
       } catch {
         // Reverse geocoding is optional. Nearby distance still works without a region label.
       }
@@ -147,7 +152,7 @@ export function useForegroundLocation() {
         if (!isLocationOwnerActive(requestedOwnerKey, activeOwnerKeyRef.current)) return;
       }
       if (user) {
-        await updatePreference.mutateAsync({ source: "device", ...next, regionName: resolvedRegion });
+        await updatePreference.mutateAsync(devicePayload);
         if (!isLocationOwnerActive(requestedOwnerKey, activeOwnerKeyRef.current)) return;
       }
       setLocationState("success");
@@ -184,18 +189,28 @@ export function useForegroundLocation() {
 
   const useManualRegion = useCallback(async (value: string) => {
     const requestedOwnerKey = activeOwnerKeyRef.current;
-    const next = value.trim();
-    if (next.length < 2) throw new Error("请输入至少 2 个字的城市或地区");
+    const payload = buildManualLocationUpdatePayload(value);
+    setError(undefined);
+    if (user) {
+      try {
+        await updatePreference.mutateAsync(payload);
+      } catch (cause) {
+        if (__DEV__) {
+          console.warn("[location.manual.save_failed]", {
+            source: payload.source,
+            cityName: payload.cityName,
+            error: cause instanceof Error ? cause.message : String(cause ?? ""),
+          });
+        }
+        throw new Error(formatLocationPreferenceError(cause));
+      }
+    }
+    if (!isLocationOwnerActive(requestedOwnerKey, activeOwnerKeyRef.current)) return;
     setStateOwnerKey(requestedOwnerKey);
     setCoordinates(undefined);
-    setRegion(next);
-    setError(undefined);
+    setRegion(payload.cityName);
     setLocationState("manual");
-    await writeCachedRegion(next, user?.id);
-    if (!isLocationOwnerActive(requestedOwnerKey, activeOwnerKeyRef.current)) return;
-    if (user) {
-      await updatePreference.mutateAsync({ source: "manual", regionName: next, cityName: next });
-    }
+    await writeCachedRegion(payload.cityName, user?.id);
   }, [updatePreference, user]);
 
   const queryInput = useMemo(() => currentCoordinates

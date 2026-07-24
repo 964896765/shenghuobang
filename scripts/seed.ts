@@ -6,6 +6,7 @@ import mysql, { type ResultSetHeader, type RowDataPacket } from "mysql2/promise"
 import * as dotenv from "dotenv";
 import path from "node:path";
 import { resolveMysqlUrlFromEnv } from "./lib/mysql-test-config.mjs";
+import { assertDemoSeedAllowed } from "./lib/demo-seed-guard";
 import { hashPassword } from "../server/_core/password";
 import { productPassportEventHash } from "../server/services/product-lifecycle-service";
 
@@ -29,7 +30,7 @@ async function ensureUser(connection: mysql.Connection, fixture: DemoUser, passw
   await connection.execute(
     `INSERT INTO users (openId, phone, passwordHash, name, loginMethod)
      VALUES (?,?,?,?, 'phone_password')
-     ON DUPLICATE KEY UPDATE passwordHash=VALUES(passwordHash), name=VALUES(name), loginMethod='phone_password'`,
+     ON DUPLICATE KEY UPDATE name=VALUES(name), loginMethod='phone_password'`,
     [`local:${fixture.phone}`, fixture.phone, passwordHash, fixture.name],
   );
   const id = await findId(connection, "SELECT id FROM users WHERE phone=? LIMIT 1", [fixture.phone]);
@@ -111,10 +112,11 @@ async function ensureListing(connection: mysql.Connection, input: {
 }
 
 async function main() {
+  const { summary } = assertDemoSeedAllowed(DB_URL, process.env);
   const databaseUrl = new URL(DB_URL);
   databaseUrl.searchParams.set("timezone", "Z");
   const connection = await mysql.createConnection(databaseUrl.toString());
-  console.log("🌱 开始补齐演示种子数据...");
+  console.log(`🌱 开始补齐演示种子数据 (${summary})...`);
   try {
     await connection.beginTransaction();
     const demoPasswordHash = await hashPassword("Demo123456");

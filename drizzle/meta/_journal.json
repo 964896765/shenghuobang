@@ -267,6 +267,13 @@
       "when": 1784679210045,
       "tag": "0037_complete_nuke",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "5",
+      "when": 1784814831640,
+      "tag": "0038_v4_auth_sessions_and_revocation",
+      "breakpoints": true
     }
   ]
 }
