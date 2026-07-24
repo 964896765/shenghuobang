@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "concurrently -k \"pnpm dev:server\" \"pnpm dev:metro\"",
     "dev:server": "cross-env NODE_ENV=development tsx watch server/_core/index.ts",
-    "dev:metro": "cross-env EXPO_USE_METRO_WORKSPACE_ROOT=1 expo start --web --port 8081",
+    "dev:metro": "node scripts/start-expo-safe.mjs --web --port 8081",
+    "dev:mobile": "node scripts/start-expo-safe.mjs --dev-client --lan --port 8081",
     "build": "esbuild server/_core/index.ts --platform=node --packages=external --bundle --format=esm --outfile=dist/index.mjs",
     "start": "cross-env NODE_ENV=production node dist/index.mjs",
     "check": "tsc --noEmit",

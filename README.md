@@ -123,6 +123,17 @@ pnpm dev
 - 进程健康检查：`http://localhost:3000/api/health`
 - 服务就绪检查：`http://localhost:3000/api/ready`
 
+Expo 必须通过仓库的受控入口启动：
+
+```bash
+pnpm dev:metro   # Web Metro
+pnpm dev:mobile  # Development Client，局域网模式
+```
+
+两个入口都在当前终端运行，禁止同一仓库并发启动第二个 Expo 实例，不会自动改用
+8082 等其他端口，并将 Metro 转换限制为单 worker。不要使用 `start`、`cmd /k`、
+`Start-Process` 或直接后台启动 `expo start`；停止时在原终端按 Ctrl+C。
+
 LAN Demo 构建与本地开发的区别：
 
 - Development：允许本地 `localhost`、热更新和开发调试能力
