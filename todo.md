@@ -10,22 +10,21 @@
 
 身份与权限架构 → 创意落地最小闭环 → 生产协作 → 产品数字档案与流转 → 回收材料闭环
 
-## 当前唯一任务
+## 当前任务
 
-### V3.3-A / A1：规格与权限威胁模型
+### V4 Alpha 稳定化（`codex/v4-demo-stabilization`）
 
-- [ ] 输出新增表完整数据字典。
-- [ ] 输出旧角色/认证/项目到新模型的迁移矩阵。
-- [ ] 冻结第一版权限能力目录。
-- [ ] 输出 RBAC + ABAC + Data Scope + Field Mask 判定表。
-- [ ] 输出敏感字段脱敏矩阵。
-- [ ] 输出身份、认证、组织、成员、邀请、项目成员和平台职务状态机。
-- [ ] 逐接口列出第一批权限改造范围。
-- [ ] 输出跨组织、停职、离职、NDA、职责分离和并发测试矩阵。
-- [ ] 运行产品规范、Markdown 链接和 diff 检查。
-- [ ] 输出 A1 报告并停止，不自动进入 A2。
-
-任务书：[`V3_3_A_BATCH1_CODEX_TASK.md`](docs/execution/stages/V3_3_A_BATCH1_CODEX_TASK.md)
+- [ ] 恢复 GitHub CI：拆分 `quality`、`dependency-audit`、`mysql-integration`、`android-export`。
+- [ ] 修复依赖审计与 V4 active-doc 校验，不再让历史 V3.2.4 文档冻结矩阵阻断当前 CI。
+- [ ] 统一版本号到 `package.json=4.0.0-alpha.1`、Expo `4.0.0`、Android `400001`。
+- [ ] 建立可撤销 Session、缩短 JWT 生命周期并补 `logout all`。
+- [ ] 为登录和注册增加单实例 Alpha 限流与失败保护。
+- [ ] 为 `db:seed` 增加 production、本地主机和库名保护，不再重写既有演示账号密码。
+- [ ] 冻结 `0000—0037` 历史迁移 checksum，后续仅允许新增 `0038+`。
+- [ ] 修复 Release 启动：根 ErrorBoundary、启动日志、可见兜底页和黑屏定位。
+- [ ] 统一客户端角色、身份和 capabilities，并修正首页“需求”入口到公开聚合页。
+- [ ] 收紧 Docker MySQL 暴露与 production 端口冲突行为。
+- [ ] 增加 `SECURITY.md`、Release 说明和 README 当前状态说明。
 
 ## V3.3-A 后续批次
 
@@ -58,4 +57,7 @@
 - [ ] 不先堆创意、生产、BOM、质检和拆解页面。
 - [ ] 不删除旧角色、旧认证或旧项目字段。
 - [ ] 不把客户端工作台切换当成权限依据。
-- [ ] 不在 V3.3-A A1 完成前进入迁移和业务代码开发。
+- [ ] 不直接修改或推送 `main`。
+- [ ] 不移动、删除或覆盖 `v4.0.0-alpha`。
+- [ ] 不强制推送，不改写 `0000—0037` 历史迁移。
+- [ ] 在 Release 黑屏未解决前，不继续扩大真机业务验收范围。

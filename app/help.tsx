@@ -4,6 +4,7 @@ import { Pressable, ScrollView, Text, View } from "react-native";
 import { ScreenContainer } from "@/components/screen-container";
 import { PageHeader } from "@/components/auth-gate";
 import { IconSymbol } from "@/components/ui/icon-symbol";
+import { getBuildInfo } from "@/lib/build-info";
 
 const FAQS = [
   {
@@ -39,6 +40,7 @@ const COMPLAINT_TYPES = [
 
 export default function HelpScreen() {
   const [expanded, setExpanded] = useState<number | null>(null);
+  const buildInfo = getBuildInfo();
 
   return (
     <ScreenContainer>
@@ -85,9 +87,11 @@ export default function HelpScreen() {
         <View className="bg-surface rounded-xl border border-border p-4 mt-3">
           <Text className="text-sm font-semibold text-foreground mb-1">关于生活帮</Text>
           <Text className="text-sm text-muted leading-5">
-            生活帮是一个连接用户与专业服务提供者的综合生活服务平台,致力于让每个生活问题都能找到真正可用的解决方案。
+            生活帮连接需求、创意、协作、生产、交易、维修、捐赠、回收与可信追溯,当前提供 V4 Alpha 可运行产品雏形。
           </Text>
-          <Text className="text-xs text-muted mt-2">版本 1.0.0(MVP) · © 2024 生活帮</Text>
+          <Text className="text-xs text-muted mt-2">版本 {buildInfo.appVersion} / 包版本 {buildInfo.packageVersion}</Text>
+          <Text className="text-xs text-muted mt-1">versionCode {buildInfo.versionCode} · profile {buildInfo.buildProfile} · channel {buildInfo.releaseChannel}</Text>
+          <Text className="text-xs text-muted mt-1">commit {buildInfo.gitCommit.slice(0, 7)} · API {buildInfo.apiBaseUrl || "未配置"}</Text>
         </View>
       </ScrollView>
     </ScreenContainer>
