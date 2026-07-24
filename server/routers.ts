@@ -52,6 +52,14 @@ const nearbyInputSchema = z.object(nearbyFields).superRefine((value, ctx) => {
     ctx.addIssue({ code: "custom", message: "经纬度必须同时提供" });
   }
 });
+const optionalLocationNameSchema = z.preprocess(
+  (value) => {
+    if (typeof value !== "string") return value;
+    const trimmed = value.trim();
+    return trimmed.length ? trimmed : undefined;
+  },
+  z.string().min(2).max(64).optional(),
+).optional();
 
 async function addNearbyMetadata<T>(
   rows: T[],
@@ -203,8 +211,8 @@ export const appRouter = router({
     }),
     update: protectedProcedure.input(z.object({
       source: z.enum(["device", "manual"]),
-      cityName: z.string().trim().min(2).max(64).optional(),
-      regionName: z.string().trim().min(2).max(64).optional(),
+      cityName: optionalLocationNameSchema,
+      regionName: optionalLocationNameSchema,
       latitude: z.number().min(-90).max(90).optional(),
       longitude: z.number().min(-180).max(180).optional(),
     }).superRefine((value, ctx) => {

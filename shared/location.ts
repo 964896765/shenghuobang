@@ -34,13 +34,74 @@ export type ApproximateResourceLocation = {
   region?: string | null;
 };
 
+export type ReverseGeocodeParts = {
+  city?: string | null;
+  district?: string | null;
+  subregion?: string | null;
+  region?: string | null;
+};
+
+function normalizeLocationName(value?: string | null) {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed.slice(0, 64) : undefined;
+}
+
 export function roundForStorage(value: number) {
   return Number(value.toFixed(2));
 }
 
+export function resolveStoredLocationName(input?: { cityName?: string | null; regionName?: string | null }) {
+  return normalizeLocationName(input?.regionName) ?? normalizeLocationName(input?.cityName);
+}
+
+export function buildManualLocationUpdatePayload(value: string) {
+  const cityName = normalizeLocationName(value);
+  if (!cityName || cityName.length < 2) {
+    throw new Error("请输入至少 2 个字的城市名称");
+  }
+  return {
+    source: "manual" as const,
+    cityName,
+  };
+}
+
+export function buildDeviceLocationUpdatePayload(
+  coordinates: { latitude: number; longitude: number },
+  address?: ReverseGeocodeParts,
+  fallbackRegion?: string,
+) {
+  const cityName = normalizeLocationName(address?.city)
+    ?? normalizeLocationName(address?.subregion)
+    ?? normalizeLocationName(address?.region)
+    ?? normalizeLocationName(fallbackRegion);
+  const regionCandidate = normalizeLocationName(address?.district)
+    ?? normalizeLocationName(address?.subregion)
+    ?? normalizeLocationName(fallbackRegion);
+  const regionName = regionCandidate && regionCandidate !== cityName ? regionCandidate : undefined;
+  return {
+    source: "device" as const,
+    latitude: coordinates.latitude,
+    longitude: coordinates.longitude,
+    cityName,
+    regionName,
+    displayName: resolveStoredLocationName({ cityName, regionName }),
+  };
+}
+
+export function formatLocationPreferenceError(cause: unknown) {
+  const message = cause instanceof Error ? cause.message : String(cause ?? "");
+  if (message.includes("请输入至少 2 个字的城市名称")) return message;
+  if (
+    /too_small|invalid_type|TRPCClientError|regionName|cityName|minimum|path|origin|\{|\[/.test(message)
+  ) {
+    return "城市信息不完整，请重新定位或选择城市。";
+  }
+  return "保存失败，请稍后重试";
+}
+
 export function normalizeViewerLocation(input?: ViewerLocation): ViewerLocation | undefined {
   if (!input) return undefined;
-  const region = input.region?.trim().slice(0, 64) || undefined;
+  const region = normalizeLocationName(input.region);
   const hasCoordinates = Number.isFinite(input.latitude) && Number.isFinite(input.longitude);
   if (!hasCoordinates) return region ? { region } : undefined;
   const latitude = Number(input.latitude);

@@ -3,13 +3,17 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import {
+  buildDeviceLocationUpdatePayload,
+  buildManualLocationUpdatePayload,
   approximateDistance,
   distanceKm,
+  formatLocationPreferenceError,
   isLocationOwnerActive,
   locationOwnerKey,
   nearbyRank,
   normalizeViewerLocation,
   resolveForegroundPermission,
+  resolveStoredLocationName,
   roundForStorage,
   scopedLocationValue,
   stableNearbySort,
@@ -45,6 +49,39 @@ describe("V3.2.4-R2 前台位置权限状态", () => {
     expect(card).toContain("if (location.region) setManualRegion(location.region)");
     expect(api).toContain("clearLocationCaches()");
   });
+
+  it("手动城市保存失败时不应先把未落库城市写入当前状态", () => {
+    const hook = readFileSync(resolve(process.cwd(), "hooks/use-foreground-location.ts"), "utf8");
+    expect(hook.indexOf("await updatePreference.mutateAsync(payload);")).toBeLessThan(hook.indexOf("setRegion(payload.cityName);"));
+  });
+
+  it("手动城市只提交 cityName，缺少 regionName 也能形成有效 payload", () => {
+    expect(buildManualLocationUpdatePayload(" 杭州 ")).toEqual({
+      source: "manual",
+      cityName: "杭州",
+    });
+  });
+
+  it("设备逆地理编码优先拆出 cityName 和 regionName，并使用更细的展示地区", () => {
+    expect(buildDeviceLocationUpdatePayload(
+      { latitude: 30.2741, longitude: 120.1551 },
+      { region: "浙江省", city: "杭州市", district: "西湖区" },
+    )).toEqual({
+      source: "device",
+      latitude: 30.2741,
+      longitude: 120.1551,
+      cityName: "杭州市",
+      regionName: "西湖区",
+      displayName: "西湖区",
+    });
+  });
+
+  it("用户可见错误不暴露原始 Zod JSON", () => {
+    const message = formatLocationPreferenceError(new Error('[{"origin":"string","code":"too_small","minimum":2,"path":["regionName"],"message":"Too small: expected string to have >=2 characters"}]'));
+    expect(message).toBe("城市信息不完整，请重新定位或选择城市。");
+    expect(message).not.toContain("too_small");
+    expect(message).not.toContain("regionName");
+  });
 });
 
 describe("V3.2.4-R2 位置隐私和排序", () => {
@@ -64,6 +101,11 @@ describe("V3.2.4-R2 位置隐私和排序", () => {
   it("拒绝无效或不完整坐标并保留手动地区", () => {
     expect(normalizeViewerLocation({ latitude: 100, longitude: 20, region: "北京" })).toEqual({ region: "北京" });
     expect(normalizeViewerLocation({ latitude: 39.9, region: "北京" })).toEqual({ region: "北京" });
+  });
+
+  it("优先展示 regionName，其次回退 cityName", () => {
+    expect(resolveStoredLocationName({ regionName: "西湖区", cityName: "杭州市" })).toBe("西湖区");
+    expect(resolveStoredLocationName({ cityName: "杭州" })).toBe("杭州");
   });
 
   it("距离只输出近似整数公里", () => {
