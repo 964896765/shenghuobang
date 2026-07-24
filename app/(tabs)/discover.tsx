@@ -1,11 +1,15 @@
-import { useEffect, useState } from "react";
-import { FlatList, Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { FlatList, RefreshControl, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 
 import { type ContentCardData, ContentCard } from "@/components/content-card";
-import { EmptyState, ErrorState, LoadingView } from "@/components/common";
+import { DiscoverCameraMenu } from "@/components/discover/discover-camera-menu";
+import { DiscoverChannelBar } from "@/components/discover/discover-channel-bar";
+import { DiscoverHeader } from "@/components/discover/discover-header";
+import { DiscoverStateView } from "@/components/discover/discover-state-view";
 import { ScreenContainer } from "@/components/screen-container";
 import { startLogin } from "@/constants/app";
+import { discoverErrorMessage } from "@/lib/discover";
 import { useGlobalLocation } from "@/lib/location-context";
 import { useRole } from "@/lib/role-context";
 import { trpc } from "@/lib/trpc";
@@ -18,6 +22,7 @@ export default function DiscoverScreen() {
   const params = useLocalSearchParams<{ tab?: string }>();
   const initial = DISCOVER_CHANNELS.some((item) => item.id === params.tab) ? params.tab as Channel : "recommended";
   const [channel, setChannel] = useState<Channel>(initial);
+  const [cameraMenuVisible, setCameraMenuVisible] = useState(false);
   const { isAuthenticated } = useRole();
   const location = useGlobalLocation();
 
@@ -25,52 +30,107 @@ export default function DiscoverScreen() {
     if (params.tab && DISCOVER_CHANNELS.some((item) => item.id === params.tab)) setChannel(params.tab as Channel);
   }, [params.tab]);
 
+  const cityLabel = location.region ?? "选择城市";
   const content = trpc.content.discover.useQuery({
     channel,
     limit: 30,
     locationLabel: channel === "nearby" ? location.region ?? undefined : undefined,
+  }, {
+    enabled: (channel !== "following" || isAuthenticated) && (channel !== "nearby" || Boolean(location.region)),
   });
 
   const label = DISCOVER_CHANNELS.find((item) => item.id === channel)?.title ?? "发现";
+  const contentErrorHint = useMemo(() => discoverErrorMessage(content.error), [content.error]);
+  const rows = (content.data ?? []) as ContentCardData[];
+
+  let contentState: ReactNode;
+  if (channel === "following" && !isAuthenticated) {
+    contentState = (
+      <DiscoverStateView
+        state="empty"
+        title="登录后查看关注内容"
+        hint="关注创作者、品牌或服务者后，这里会显示他们最新发布的公开内容。"
+        actionTitle="登录"
+        onAction={startLogin}
+      />
+    );
+  } else if (channel === "nearby" && !location.region) {
+    contentState = (
+      <DiscoverStateView
+        state="empty"
+        title="先选择城市，再查看附近内容"
+        hint="附近频道只读取全局城市，不会在发现页内再次申请定位权限。"
+        actionTitle="选择位置"
+        onAction={() => router.push("/location" as never)}
+      />
+    );
+  } else if (content.isLoading) {
+    contentState = <DiscoverStateView state="loading" text={`正在加载${label}频道...`} />;
+  } else if (content.isError) {
+    contentState = (
+      <DiscoverStateView
+        state="error"
+        title={`${label}频道加载失败`}
+        hint={contentErrorHint}
+        onRetry={() => content.refetch()}
+      />
+    );
+  } else {
+    contentState = (
+      <DiscoverStateView state="normal">
+        <FlatList
+          data={rows}
+          keyExtractor={(item) => String(item.post.id)}
+          renderItem={({ item }) => <ContentCard item={item} />}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 36 }}
+          refreshControl={<RefreshControl refreshing={content.isRefetching} onRefresh={() => content.refetch()} />}
+          ListEmptyComponent={(
+            <DiscoverStateView
+              state="empty"
+              title={`${label}频道暂无内容`}
+              hint={
+                channel === "following"
+                  ? "关注更多创作者后，这里会显示他们最新的公开内容。"
+                  : channel === "nearby"
+                    ? `当前城市 ${cityLabel} 暂无附近内容，可切换城市后重试。`
+                    : channel === "needs"
+                      ? "公开需求相关内容会优先展示在这里。"
+                      : channel === "funding"
+                        ? "新品筹措动态、进展和更新内容会显示在这里。"
+                        : channel === "goods"
+                          ? "与商品、产品和公开目录相关的内容会显示在这里。"
+                          : channel === "services"
+                            ? "服务案例、维修经验和服务知识会显示在这里。"
+                            : "发布第一篇真实、有来源声明的内容。"
+              }
+              actionTitle={channel === "nearby" ? "选择位置" : "去创作"}
+              onAction={() => router.push((channel === "nearby" ? "/location" : "/(tabs)/publish") as never)}
+            />
+          )}
+        />
+      </DiscoverStateView>
+    );
+  }
 
   return (
-    <ScreenContainer>
+    <ScreenContainer edges={["top", "left", "right"]}>
+      <DiscoverHeader
+        cityLabel={cityLabel}
+        onPressCity={() => router.push("/location" as never)}
+        onPressSearch={() => router.push("/search" as never)}
+        onPressCamera={() => setCameraMenuVisible(true)}
+      />
+      <DiscoverChannelBar channels={DISCOVER_CHANNELS} value={channel} onChange={setChannel} />
       <View className="flex-1">
-        <View className="px-4 pb-3 pt-3">
-          <Text className="text-2xl font-bold text-foreground">发现</Text>
-          <Text className="mt-1 text-sm text-muted">八个频道共用同一可信内容流，来源、作者认证和业务关联分别展示。</Text>
-          {channel === "nearby" ? <Text className="mt-2 text-xs text-primary">当前城市：{location.region ?? "未选择"} · 附近内容使用全局位置状态</Text> : null}
-        </View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: 10 }}>
-          {DISCOVER_CHANNELS.map((item) => (
-            <Pressable key={item.id} onPress={() => setChannel(item.id)} className={`mx-1 rounded-full px-4 py-2 ${channel === item.id ? "bg-primary" : "border border-border bg-surface"}`}>
-              <Text className={channel === item.id ? "font-medium text-white" : "text-foreground"}>{item.title}</Text>
-            </Pressable>
-          ))}
-        </ScrollView>
-
-        {channel === "following" && !isAuthenticated ? (
-          <EmptyState title="登录后查看关注内容" hint="关注频道只展示你已关注作者发布的公开内容。" actionTitle="登录" onAction={startLogin} />
-        ) : content.isLoading ? <LoadingView text={`正在加载${label}频道…`} />
-          : content.isError ? <ErrorState title={`${label}频道加载失败`} hint={content.error.message} onRetry={() => content.refetch()} />
-            : (
-              <FlatList
-                data={(content.data ?? []) as ContentCardData[]}
-                keyExtractor={(item) => String(item.post.id)}
-                renderItem={({ item }) => <ContentCard item={item} />}
-                contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 36 }}
-                refreshControl={<RefreshControl refreshing={content.isRefetching} onRefresh={() => content.refetch()} />}
-                ListEmptyComponent={
-                  <EmptyState
-                    title={`${label}频道暂无内容`}
-                    hint={channel === "nearby" ? "可到首页切换城市，或发布带模糊位置的内容。" : "发布第一篇真实、有来源声明的内容。"}
-                    actionTitle={channel === "nearby" ? "切换城市" : "去创作"}
-                    onAction={() => router.push((channel === "nearby" ? "/location" : "/(tabs)/publish") as never)}
-                  />
-                }
-              />
-            )}
+        {contentState}
       </View>
+      <DiscoverCameraMenu
+        visible={cameraMenuVisible}
+        onClose={() => setCameraMenuVisible(false)}
+        onSearchByPhoto={() => router.push("/search" as never)}
+        onScanPassport={() => router.push("/products/passport" as never)}
+        onShootAndPublish={() => router.push("/(tabs)/publish" as never)}
+      />
     </ScreenContainer>
   );
 }

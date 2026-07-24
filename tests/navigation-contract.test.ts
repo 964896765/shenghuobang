@@ -31,7 +31,7 @@ describe("统一 App 导航契约", () => {
   });
 
   it("发现和消息频道保持唯一固定分类", () => {
-    expect(DISCOVER_CHANNELS.map((item) => item.title)).toEqual(["推荐", "关注", "产品", "创意", "经验", "视频", "问答", "附近"]);
+    expect(DISCOVER_CHANNELS.map((item) => item.title)).toEqual(["推荐", "关注", "附近", "需求", "创意", "筹措", "商品", "服务", "经验", "视频"]);
     expect(MESSAGE_CHANNELS.map((item) => item.title)).toEqual(["聊天", "业务", "互动", "系统"]);
   });
 

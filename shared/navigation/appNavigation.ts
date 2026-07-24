@@ -78,12 +78,14 @@ export const APP_TABS = [
 export const DISCOVER_CHANNELS = [
   { id: "recommended", title: "推荐" },
   { id: "following", title: "关注" },
-  { id: "products", title: "产品" },
+  { id: "nearby", title: "附近" },
+  { id: "needs", title: "需求" },
   { id: "ideas", title: "创意" },
+  { id: "funding", title: "筹措" },
+  { id: "goods", title: "商品" },
+  { id: "services", title: "服务" },
   { id: "experience", title: "经验" },
   { id: "videos", title: "视频" },
-  { id: "questions", title: "问答" },
-  { id: "nearby", title: "附近" },
 ] as const;
 
 export const MESSAGE_CHANNELS = [

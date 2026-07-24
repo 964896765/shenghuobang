@@ -45,6 +45,7 @@ describe("可运行雏形统一入口", () => {
   it("创意进入固定发现频道并复用真实卡片", () => {
     const discover = source("app/(tabs)/discover.tsx");
     expect(DISCOVER_CHANNELS).toContainEqual({ id: "ideas", title: "创意" });
+    expect(DISCOVER_CHANNELS.map((item) => item.title)).toEqual(["推荐", "关注", "附近", "需求", "创意", "筹措", "商品", "服务", "经验", "视频"]);
     expect(discover).toContain("trpc.content.discover.useQuery");
     expect(discover).toContain("<ContentCard item={item} />");
   });

@@ -37,7 +37,7 @@ import { writeAudit } from "./audit-service";
 export const CONTENT_TYPES = ["post", "video", "article", "question", "product_review", "tutorial", "idea_progress", "funding_update", "repair_case"] as const;
 export const CONTENT_SOURCES = ["personal_experience", "organization_official", "service_case", "platform_verified", "external_public", "ai_assisted", "unverified_claim"] as const;
 export const CONTENT_RELATION_TYPES = ["demand", "idea", "funding_project", "product", "product_unit", "listing", "repair", "service", "donation", "recycling", "account", "organization"] as const;
-export const DISCOVERY_CHANNELS = ["recommended", "following", "products", "ideas", "experience", "videos", "questions", "nearby"] as const;
+export const DISCOVERY_CHANNELS = ["recommended", "following", "nearby", "needs", "ideas", "funding", "goods", "services", "experience", "videos"] as const;
 
 export type ContentType = typeof CONTENT_TYPES[number];
 export type ContentSource = typeof CONTENT_SOURCES[number];
@@ -452,11 +452,13 @@ export class ContentService {
     const channel = input.channel ?? "recommended";
     const filters = [eq(contentPosts.status, "published"), eq(contentPosts.visibility, "public"), isNull(contentPosts.deletedAt)];
     if (input.cursor) filters.push(lt(contentPosts.id, input.cursor));
-    if (channel === "products") filters.push(inArray(contentPosts.contentType, ["product_review", "tutorial"]));
+    if (channel === "goods") filters.push(inArray(contentPosts.contentType, ["product_review", "tutorial"]));
+    if (channel === "needs") filters.push(eq(contentPosts.contentType, "question"));
     if (channel === "ideas") filters.push(eq(contentPosts.contentType, "idea_progress"));
+    if (channel === "funding") filters.push(eq(contentPosts.contentType, "funding_update"));
+    if (channel === "services") filters.push(inArray(contentPosts.contentType, ["repair_case", "tutorial"]));
     if (channel === "experience") filters.push(inArray(contentPosts.contentType, ["post", "article", "tutorial", "repair_case"]));
     if (channel === "videos") filters.push(eq(contentPosts.contentType, "video"));
-    if (channel === "questions") filters.push(eq(contentPosts.contentType, "question"));
     if (channel === "nearby" && input.locationLabel?.trim()) filters.push(eq(contentPosts.locationLabel, input.locationLabel.trim()));
     if (channel === "following") {
       if (!accountId) return [];
