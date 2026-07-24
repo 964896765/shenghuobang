@@ -28,6 +28,26 @@ export const users = mysqlTable("users",
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
+export const authSessions = mysqlTable("auth_sessions", {
+  id: int("id").autoincrement().primaryKey(),
+  sessionId: varchar("sessionId", { length: 64 }).notNull().unique(),
+  userId: int("userId").notNull().references(() => users.id),
+  tokenHash: char("tokenHash", { length: 64 }).notNull().unique(),
+  deviceId: varchar("deviceId", { length: 128 }),
+  userAgent: varchar("userAgent", { length: 255 }),
+  ipDigest: char("ipDigest", { length: 64 }),
+  expiresAt: timestamp("expiresAt").notNull(),
+  revokedAt: timestamp("revokedAt"),
+  revokeReason: varchar("revokeReason", { length: 255 }),
+  lastSeenAt: timestamp("lastSeenAt").defaultNow().notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  userExpiryIndex: index("auth_sessions_user_expiry_idx").on(table.userId, table.expiresAt),
+  userRevokedIndex: index("auth_sessions_user_revoked_idx").on(table.userId, table.revokedAt),
+}));
+export type AuthSession = typeof authSessions.$inferSelect;
+
 /** 用户扩展资料 + 当前身份 */
 export const userProfiles = mysqlTable("user_profiles", {
   id: int("id").autoincrement().primaryKey(),

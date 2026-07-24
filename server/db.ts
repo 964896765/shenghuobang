@@ -3,6 +3,7 @@ import { drizzle } from "drizzle-orm/mysql2";
 import { addScheduleDays, applyProjectAmountDelta, canCreateQuoteVersion, projectAgreementStatus } from "../shared/project-rules";
 import {
   InsertUser,
+  authSessions,
   users,
   userProfiles,
   userLocationPreferences,
@@ -279,6 +280,57 @@ export async function createLocalUser(input: {
     nickname: input.name ?? `用户${input.phone.slice(-4)}`,
   });
   return getUserById(userId);
+}
+
+export async function createAuthSession(input: {
+  sessionId: string;
+  userId: number;
+  tokenHash: string;
+  expiresAt: Date;
+  deviceId?: string | null;
+  userAgent?: string | null;
+  ipDigest?: string | null;
+}) {
+  const db = await requireDb();
+  await db.insert(authSessions).values({
+    sessionId: input.sessionId,
+    userId: input.userId,
+    tokenHash: input.tokenHash,
+    expiresAt: input.expiresAt,
+    deviceId: input.deviceId ?? null,
+    userAgent: input.userAgent ?? null,
+    ipDigest: input.ipDigest ?? null,
+    lastSeenAt: new Date(),
+  });
+}
+
+export async function getAuthSessionBySessionId(sessionId: string) {
+  const db = await requireDb();
+  const rows = await db.select().from(authSessions).where(eq(authSessions.sessionId, sessionId)).limit(1);
+  return rows[0];
+}
+
+export async function touchAuthSessionSeen(sessionId: string, seenAt = new Date()) {
+  const db = await requireDb();
+  await db.update(authSessions).set({ lastSeenAt: seenAt }).where(eq(authSessions.sessionId, sessionId));
+}
+
+export async function revokeAuthSession(sessionId: string, reason = "logout") {
+  const db = await requireDb();
+  await db.update(authSessions).set({
+    revokedAt: new Date(),
+    revokeReason: reason,
+  }).where(and(eq(authSessions.sessionId, sessionId), isNull(authSessions.revokedAt)));
+}
+
+export async function revokeAllAuthSessionsForUser(userId: number, reason = "logout_all", exceptSessionId?: string | null) {
+  const db = await requireDb();
+  const filters = [eq(authSessions.userId, userId), isNull(authSessions.revokedAt)];
+  if (exceptSessionId) filters.push(ne(authSessions.sessionId, exceptSessionId));
+  await db.update(authSessions).set({
+    revokedAt: new Date(),
+    revokeReason: reason,
+  }).where(and(...filters));
 }
 
 export async function touchUserSignedIn(id: number) {

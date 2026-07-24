@@ -2,6 +2,14 @@ import { spawnSync } from "node:child_process";
 import assert from "node:assert/strict";
 import mysql, { type RowDataPacket } from "mysql2/promise";
 import { productPassportEventHash } from "../server/services/product-lifecycle-service";
+import {
+  assertSafeLocalTestDatabaseServer,
+  createMysqlConnectionOptions,
+  replaceMysqlDatabaseName,
+  resolveMysqlAdminUrlFromEnv,
+} from "./lib/mysql-test-config.mjs";
+
+const DATABASE_NAME = "shenghuobang_demo_seed";
 
 type Snapshot = {
   users: number;
@@ -20,12 +28,23 @@ type Snapshot = {
 function runSeed() {
   const result = spawnSync("pnpm", ["db:seed"], {
     cwd: process.cwd(),
-    env: process.env,
+    env: { ...process.env, ALLOW_DEMO_SEED: "true" },
     stdio: "inherit",
     shell: process.platform === "win32",
     windowsHide: true,
   });
   if (result.status !== 0) throw new Error(`db:seed 执行失败，退出码 ${result.status}：${result.error?.message ?? "未知错误"}`);
+}
+
+function runMigrate(databaseUrl: string) {
+  const result = spawnSync("pnpm", ["db:migrate"], {
+    cwd: process.cwd(),
+    env: { ...process.env, DATABASE_URL: databaseUrl },
+    stdio: "inherit",
+    shell: process.platform === "win32",
+    windowsHide: true,
+  });
+  if (result.status !== 0) throw new Error(`db:migrate 执行失败，退出码 ${result.status}：${result.error?.message ?? "未知错误"}`);
 }
 
 async function snapshot(connection: mysql.Connection) {
@@ -85,11 +104,17 @@ async function assertSeedPassportIntegrity(connection: mysql.Connection) {
 }
 
 async function main() {
-  if (!process.env.DATABASE_URL) throw new Error("test:seed:idempotent 需要 DATABASE_URL");
-  const databaseUrl = new URL(process.env.DATABASE_URL);
-  databaseUrl.searchParams.set("timezone", "Z");
-  const connection = await mysql.createConnection(databaseUrl.toString());
+  const { rawUrl: adminRawUrl } = resolveMysqlAdminUrlFromEnv({ consumerName: "seed idempotency test" });
+  assertSafeLocalTestDatabaseServer(adminRawUrl, { consumerName: "seed idempotency test" });
+  const admin = await mysql.createConnection(createMysqlConnectionOptions(adminRawUrl, { multipleStatements: true }));
+  const targetUrl = new URL(replaceMysqlDatabaseName(adminRawUrl, DATABASE_NAME));
+  targetUrl.searchParams.set("timezone", "Z");
+  let connection: mysql.Connection | null = null;
   try {
+    await admin.query(`DROP DATABASE IF EXISTS \`${DATABASE_NAME}\`; CREATE DATABASE \`${DATABASE_NAME}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`);
+    connection = await mysql.createConnection(targetUrl.toString());
+    process.env.DATABASE_URL = targetUrl.toString();
+    runMigrate(targetUrl.toString());
     runSeed();
     const first = await snapshot(connection);
     assert.deepEqual(first, { users: 7, profiles: 7, needs: 3, listings: 3, recycling: 1, verifications: 4, products: 3, units: 2, skus: 4, content: 7, commerce: 4 });
@@ -100,7 +125,11 @@ async function main() {
     await assertSeedPassportIntegrity(connection);
     console.log("幂等 Seed 测试通过：连续执行两次未重复创建演示用户、产品、内容、商品、订单、支付、评价或信用事件");
   } finally {
-    await connection.end();
+    await connection?.end();
+    if (process.env.KEEP_INTEGRATION_DB !== "1") {
+      await admin.query(`DROP DATABASE IF EXISTS \`${DATABASE_NAME}\``).catch(() => undefined);
+    }
+    await admin.end();
   }
 }
 
